@@ -1,0 +1,13 @@
+[package]
+name = "rust-gameboy"
+version = "0.1.0"
+authors = ["Xavier Amado <xamado@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+beryllium = { version = "0.3.2", features = ["extern_crate_raw_window_handle"] }
+env_logger = "0.7.1"
+log = "0.4.8"
+pixels = "0.2.0"
