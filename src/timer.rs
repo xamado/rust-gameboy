@@ -17,18 +17,11 @@ pub struct Timer {
     timer_overflow: bool
 }
 
-const TIMER_FREQUENCY : [u32; 4] = [
-    4096,
-    262144,
-    65536,
-    16384
-];
-
 const TIMER_FREQ_CYCLES : [u16; 4] = [
-    1024,
-    16,
-    64,
-    256,
+    1024,   // 4096 hz
+    16,     // 262144 hz
+    64,     // 65536 hz
+    256,    // 16384 hz
 ];
 
 impl Timer {

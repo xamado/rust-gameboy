@@ -17,13 +17,6 @@ const TILE_SIZE: u8 = 16;
 
 const OAM_TABLE_ADDRESS: u16 = 0xFE00;
 
-enum PPUMode {
-    Mode0 = 0,
-    Mode1 = 1,
-    Mode2 = 2,
-    Mode3 = 3
-}
-
 #[allow(unused)]
 enum LCDCBits {
     LCDEnable = 1 << 7,
@@ -42,6 +35,13 @@ struct OAMEntry {
     x: u8,
     tile: u8,
     flags: u8
+}
+
+enum OBJAttributes {
+    Priority = 1 << 7,
+    YFlip = 1 << 6,
+    XFlip = 1 << 5,
+    Palette = 1 << 4
 }
 
 pub struct PPU {
@@ -119,14 +119,14 @@ impl PPU {
                     }
 
                     if self.ly == VBLANK_LINE {
-                        mode = PPUMode::Mode1 as u8;
+                        mode = 1;
 
                         // raise the VBlank interrupt
                         let iif = self.bus.borrow().read_byte(0xFF0F) | (1 << Interrupts::VBlank as u8);
                         self.bus.borrow_mut().write_byte(0xFF0F, iif);
                     }
                     else {
-                        mode = PPUMode::Mode2 as u8;
+                        mode = 2;
                     }
 
                     self.check_stat_interrupts();
@@ -198,8 +198,8 @@ impl PPU {
         let bg_enabled = (self.lcdc & 1) != 0;
         // let w_enabled = (reg_lcdc & (1 << 5)) != 0;
         let obj_enabled = (self.lcdc & (1 << 1)) != 0;
+        
         let display_select = self.lcdc & (LCDCBits::BackgroundTilemapDisplaySelect as u8);
-
         let bg_tile_map_address: u16 = if (display_select) != 0 { 0x9C00 } else { 0x9800 };
 
         let scx: u16 = self.scx as u16;
@@ -215,11 +215,17 @@ impl PPU {
         let mut pixel_idx = 0;
 
         if bg_enabled {
-            for x in start_tile_col..end_tile_col {
-                let tile_address = bg_tile_map_address + (((TILES_PER_ROW * (start_tile_row as u16 % TILES_PER_ROW)) + (x as u16 % TILES_PER_COL)) as u16);
+            let addressing_mode = self.lcdc & LCDCBits::TileDataSelect as u8;
+            let tile_data_base_address: u16 = if addressing_mode != 0 { 0x8000 } else { 0x8800 };
 
+            for x in start_tile_col..end_tile_col {
+                // read tile number from tile map
+                let tile_address = bg_tile_map_address + (((TILES_PER_ROW * (start_tile_row as u16 % TILES_PER_ROW)) + (x as u16 % TILES_PER_COL)) as u16);
                 let tile_number: u8 = self.bus.borrow().read_byte(tile_address);
-                let tile_row_data = self.read_tile_data(tile_number, pixel_row as u8);
+
+                // read tile data
+                let tile_index: u8 = if addressing_mode != 0 { tile_number } else { ((tile_number as i16) + 128) as u8 };
+                let tile_row_data = self.read_tile_data(tile_data_base_address, tile_index, pixel_row as u8);
 
                 let mut pixel_col = x * TILE_WIDTH;
 
@@ -228,15 +234,17 @@ impl PPU {
                         let color_idx = tile_row_data[i as usize] & 0x03;
                         let color = (self.bg_palette & (3 << (color_idx * 2))) >> (color_idx * 2);
                         scanline_buffer[pixel_idx] = color;
+                        pixel_idx += 1;
                     }
                     
                     pixel_col += 1;
-                    pixel_idx += 1;
                 }
             }
         }
 
         if obj_enabled {
+            let tile_data_base_address: u16 = 0x8000;
+
             let mode_8x16 = (self.lcdc & (1 << 2)) != 0;
             let mut obj_count: u8 = 0;
 
@@ -257,19 +265,36 @@ impl PPU {
                 if (self.ly as i16) < y || (self.ly as i16) >= y + (height as i16) {
                     continue;
                 }
+                
+                let flip_x = (obj.flags & OBJAttributes::XFlip as u8) != 0;
+                let flip_y = (obj.flags & OBJAttributes::YFlip as u8) != 0;
+                let priority = (obj.flags & OBJAttributes::Priority as u8) != 0;
 
-                let row = (self.ly as i16) - y;
+                let mut row = (self.ly as i16) - y;
+                if flip_y {
+                    row = height - row - 1;
+                }
 
-                let obj_tile_data = self.read_tile_data(obj.tile, row as u8);
+                let obj_tile_data = self.read_tile_data(tile_data_base_address, obj.tile, row as u8);
 
                 for p in 0..8 {
                     if (x + (p as i16)) < 0 || (x + (p as i16)) >= 160 {
                         continue;
                     }
 
-                    let idx = (x as u8 + p) as usize;
-                    let color_idx = obj_tile_data[p as usize];
+                    // let idx = (x as u8 + p) as usize;
+                    let idx = (x as u8).wrapping_add(p) as usize;
+                    let color_idx = if flip_x { obj_tile_data[TILE_WIDTH as usize - 1 - p as usize] } else { obj_tile_data[p as usize] };
                     let color = (self.obj_palette0 & (3 << (color_idx * 2))) >> (color_idx * 2);
+
+                    if color == 0 {
+                        continue;
+                    }
+
+                    if priority && scanline_buffer[idx] != 0 {
+                        continue;
+                    }
+
                     scanline_buffer[idx] = color;
                 }
 
@@ -280,28 +305,12 @@ impl PPU {
         self.screen.borrow_mut().set_scanline(self.ly as u8, &scanline_buffer);
     }
 
-    fn read_tile_data(&self, tile_number: u8, row: u8) -> [u8; 8] {
+    fn read_tile_data(&self, base_address: u16, tile_number: u8, row: u8) -> [u8; 8] {
         let bus = self.bus.borrow();
 
-        let addressing_mode = self.lcdc & LCDCBits::TileDataSelect as u8;
-        let tile_data_address: u16 = if addressing_mode != 0 { 0x8000 } else { 0x9000 };
-        
-        // let blah: i8 = tile_number as i8;
-        // let bleh: i32 = blah as i32;
-
-        let tile_address;
-        if addressing_mode != 0 {
-            let offset = tile_number as u16 * TILE_SIZE as u16;
-            tile_address = tile_data_address + offset;
-        }
-        else {
-            let tn: i8 = tile_number as i8;
-            let offset: i32 = (tn as i32) * (TILE_SIZE as i32);
-            tile_address = ((tile_data_address as i32) + offset) as u16;
-        }
+        let tile_address = base_address + (tile_number as u16 * TILE_SIZE as u16);
 
         let offset: u16 = row as u16 * 2;
-
         let mut tile_row: [u8; 8] = [0; 8];
         
         let lsb = bus.read_byte(tile_address + offset);

@@ -63,6 +63,7 @@ impl CPU {
             (0x0000_u16, Instruction { dissassembly: String::from("NOP"), bytes: 1, func: CPU::op_nop }),
             (0x0010_u16, Instruction { dissassembly: String::from("STOP"), bytes: 2, func: CPU::op_stop }),
             (0x0076_u16, Instruction { dissassembly: String::from("HALT"), bytes: 1, func: CPU::op_nop }),
+
             (0x003C_u16, Instruction { dissassembly: String::from("INC A"), bytes: 1, func: CPU::op_inc_a }),
             (0x0004_u16, Instruction { dissassembly: String::from("INC B"), bytes: 1, func: CPU::op_inc_b }),
             (0x000C_u16, Instruction { dissassembly: String::from("INC C"), bytes: 1, func: CPU::op_inc_c }),
@@ -75,7 +76,6 @@ impl CPU {
             (0x0023_u16, Instruction { dissassembly: String::from("INC HL"), bytes: 1, func: CPU::op_inc_hl }),
             (0x0033_u16, Instruction { dissassembly: String::from("INC SP"), bytes: 1, func: CPU::op_inc_sp }),
             (0x0034_u16, Instruction { dissassembly: String::from("INC (HL)"), bytes: 1, func: CPU::op_inc_mem_hl }),
-            
             (0x003D_u16, Instruction { dissassembly: String::from("DEC A"), bytes: 1, func: CPU::op_dec_a }),
             (0x0005_u16, Instruction { dissassembly: String::from("DEC B"), bytes: 1, func: CPU::op_dec_b }),
             (0x000D_u16, Instruction { dissassembly: String::from("DEC C"), bytes: 1, func: CPU::op_dec_c }),
@@ -88,7 +88,6 @@ impl CPU {
             (0x002B_u16, Instruction { dissassembly: String::from("DEC HL"), bytes: 1, func: CPU::op_dec_hl }),
             (0x003B_u16, Instruction { dissassembly: String::from("DEC SP"), bytes: 1, func: CPU::op_dec_sp }),
             (0x0035_u16, Instruction { dissassembly: String::from("DEC (HL)"), bytes: 1, func: CPU::op_dec_mem_hl }),
-            
             (0x0087_u16, Instruction { dissassembly: String::from("ADD A,A"), bytes: 1, func: CPU::op_add_a_a }),
             (0x0080_u16, Instruction { dissassembly: String::from("ADD A,B"), bytes: 1, func: CPU::op_add_a_b }),
             (0x0081_u16, Instruction { dissassembly: String::from("ADD A,C"), bytes: 1, func: CPU::op_add_a_c }),
@@ -103,7 +102,6 @@ impl CPU {
             (0x0029_u16, Instruction { dissassembly: String::from("ADD HL,HL"), bytes: 1, func: CPU::op_add_hl_hl }),
             (0x0039_u16, Instruction { dissassembly: String::from("ADD HL,SP"), bytes: 1, func: CPU::op_add_hl_sp }),
             (0x00E8_u16, Instruction { dissassembly: String::from("ADD SP,s8"), bytes: 2, func: CPU::op_add_sp_s8 }),
-
             (0x0097_u16, Instruction { dissassembly: String::from("SUB A"), bytes: 1, func: CPU::op_sub_a }),
             (0x0090_u16, Instruction { dissassembly: String::from("SUB B"), bytes: 1, func: CPU::op_sub_b }),
             (0x0091_u16, Instruction { dissassembly: String::from("SUB C"), bytes: 1, func: CPU::op_sub_c }),
@@ -113,7 +111,6 @@ impl CPU {
             (0x0095_u16, Instruction { dissassembly: String::from("SUB L"), bytes: 1, func: CPU::op_sub_l }),
             (0x00D6_u16, Instruction { dissassembly: String::from("SUB d8"), bytes: 2, func: CPU::op_sub_d8 }),
             (0x0096_u16, Instruction { dissassembly: String::from("SUB (HL)"), bytes: 1, func: CPU::op_sub_mem_hl }),
-
             (0x008F_u16, Instruction { dissassembly: String::from("ADC A,A"), bytes: 1, func: CPU::op_adc_a_a }),
             (0x0088_u16, Instruction { dissassembly: String::from("ADC A,B"), bytes: 1, func: CPU::op_adc_a_b }),
             (0x0089_u16, Instruction { dissassembly: String::from("ADC A,C"), bytes: 1, func: CPU::op_adc_a_c }),
@@ -123,7 +120,6 @@ impl CPU {
             (0x008D_u16, Instruction { dissassembly: String::from("ADC A,L"), bytes: 1, func: CPU::op_adc_a_l }),
             (0x00CE_u16, Instruction { dissassembly: String::from("ADC A,d8"), bytes: 2, func: CPU::op_adc_a_d8 }),
             (0x008E_u16, Instruction { dissassembly: String::from("ADC A,(HL)"), bytes: 1, func: CPU::op_adc_a_mem_hl }),
-            
             (0x009F_u16, Instruction { dissassembly: String::from("SBC A,A"), bytes: 1, func: CPU::op_sbc_a_a }),
             (0x0098_u16, Instruction { dissassembly: String::from("SBC A,B"), bytes: 1, func: CPU::op_sbc_a_b }),
             (0x0099_u16, Instruction { dissassembly: String::from("SBC A,C"), bytes: 1, func: CPU::op_sbc_a_c }),
@@ -131,10 +127,11 @@ impl CPU {
             (0x009B_u16, Instruction { dissassembly: String::from("SBC A,E"), bytes: 1, func: CPU::op_sbc_a_e }),
             (0x009C_u16, Instruction { dissassembly: String::from("SBC A,H"), bytes: 1, func: CPU::op_sbc_a_h }),
             (0x009D_u16, Instruction { dissassembly: String::from("SBC A,L"), bytes: 1, func: CPU::op_sbc_a_l }),
-
             (0x00DE_u16, Instruction { dissassembly: String::from("SBC A,d8"), bytes: 2, func: CPU::op_sbc_a_d8 }),
 
             (0x0027_u16, Instruction { dissassembly: String::from("DAA"), bytes: 1, func: CPU::op_daa }),
+            (0x003F_u16, Instruction { dissassembly: String::from("CCF"), bytes: 1, func: CPU::op_ccf }),
+
             (0x00BF_u16, Instruction { dissassembly: String::from("CP A"), bytes: 1, func: CPU::op_cp_a }),
             (0x00B8_u16, Instruction { dissassembly: String::from("CP B"), bytes: 1, func: CPU::op_cp_b }),
             (0x00B9_u16, Instruction { dissassembly: String::from("CP C"), bytes: 1, func: CPU::op_cp_c }),
@@ -145,6 +142,7 @@ impl CPU {
             (0x00FE_u16, Instruction { dissassembly: String::from("CP d8"), bytes: 1, func: CPU::op_cp_d8 }),
             (0x00BE_u16, Instruction { dissassembly: String::from("CP (HL)"), bytes: 1, func: CPU::op_cp_mem_hl }),
 
+            // LOAD instructions
             (0x007F_u16, Instruction { dissassembly: String::from("LD A,A"), bytes: 1, func: CPU::op_ld_a_a }),
             (0x0078_u16, Instruction { dissassembly: String::from("LD A,B"), bytes: 1, func: CPU::op_ld_a_b }),
             (0x0079_u16, Instruction { dissassembly: String::from("LD A,C"), bytes: 1, func: CPU::op_ld_a_c }),
@@ -196,7 +194,6 @@ impl CPU {
             (0x006C_u16, Instruction { dissassembly: String::from("LD L,H"), bytes: 1, func: CPU::op_ld_l_h }),
             (0x006D_u16, Instruction { dissassembly: String::from("LD L,L"), bytes: 1, func: CPU::op_ld_l_l }),
             (0x006E_u16, Instruction { dissassembly: String::from("LD L,(HL)"), bytes: 1, func: CPU::op_ld_l_mem_hl }),
-
             (0x003E_u16, Instruction { dissassembly: String::from("LD A,d8"), bytes: 2, func: CPU::op_ld_a_d8 }),
             (0x0006_u16, Instruction { dissassembly: String::from("LD B,d8"), bytes: 2, func: CPU::op_ld_b_d8 }),
             (0x000E_u16, Instruction { dissassembly: String::from("LD C,d8"), bytes: 2, func: CPU::op_ld_c_d8 }),
@@ -204,14 +201,12 @@ impl CPU {
             (0x001E_u16, Instruction { dissassembly: String::from("LD E,d8"), bytes: 2, func: CPU::op_ld_e_d8 }),
             (0x002E_u16, Instruction { dissassembly: String::from("LD L,d8"), bytes: 2, func: CPU::op_ld_l_d8 }),
             (0x0026_u16, Instruction { dissassembly: String::from("LD H,d8"), bytes: 2, func: CPU::op_ld_h_d8 }),
-
             (0x0001_u16, Instruction { dissassembly: String::from("LD BC,d16"), bytes: 3, func: CPU::op_ld_bc_d16 }),
             (0x0011_u16, Instruction { dissassembly: String::from("LD DE,d16"), bytes: 3, func: CPU::op_ld_de_d16 }),
             (0x0021_u16, Instruction { dissassembly: String::from("LD HL,d16"), bytes: 3, func: CPU::op_ld_hl_d16 }),
             (0x0031_u16, Instruction { dissassembly: String::from("LD SP,d16"), bytes: 3, func: CPU::op_ld_sp_d16 }),
             (0x00F9_u16, Instruction { dissassembly: String::from("LD SP,HL"), bytes: 1, func: CPU::op_ld_sp_hl }),
             (0x00F8_u16, Instruction { dissassembly: String::from("LD HL,SP+s8"), bytes: 2, func: CPU::op_ld_hl_sp_add_s8 }),
-
             (0x00F2_u16, Instruction { dissassembly: String::from("LD A,(C)"), bytes: 1, func: CPU::op_ld_a_mem_c }),
             (0x000A_u16, Instruction { dissassembly: String::from("LD A,(BC)"), bytes: 1, func: CPU::op_ld_a_mem_bc }),
             (0x001A_u16, Instruction { dissassembly: String::from("LD A,(DE)"), bytes: 1, func: CPU::op_ld_a_mem_de }),
@@ -222,8 +217,6 @@ impl CPU {
             (0x005E_u16, Instruction { dissassembly: String::from("LD E,(HL)"), bytes: 1, func: CPU::op_ld_e_mem_hl }),
             (0x00F0_u16, Instruction { dissassembly: String::from("LD A,(d8)"), bytes: 2, func: CPU::op_ld_a_mem_d8 }),
             (0x00FA_u16, Instruction { dissassembly: String::from("LD A,(a16)"), bytes: 3, func: CPU::op_ld_a_mem_a16 }),
-
-
             (0x002A_u16, Instruction { dissassembly: String::from("LD A,(HL+)"), bytes: 1, func: CPU::op_ld_a_mem_hl_inc }),
             (0x003A_u16, Instruction { dissassembly: String::from("LD A,(HL-)"), bytes: 1, func: CPU::op_ld_a_mem_hl_dec }),
             (0x00E2_u16, Instruction { dissassembly: String::from("LD (C),A"), bytes: 1, func: CPU::op_ld_mem_c_a }),
@@ -236,7 +229,6 @@ impl CPU {
             (0x0073_u16, Instruction { dissassembly: String::from("LD (HL),E"), bytes: 1, func: CPU::op_ld_mem_hl_e }),
             (0x0074_u16, Instruction { dissassembly: String::from("LD (HL),H"), bytes: 2, func: CPU::op_ld_mem_hl_h }),
             (0x0075_u16, Instruction { dissassembly: String::from("LD (HL),L"), bytes: 2, func: CPU::op_ld_mem_hl_l }),
-
             (0x0032_u16, Instruction { dissassembly: String::from("LD (HL-),A"), bytes: 1, func: CPU::op_ld_mem_hl_dec_a }),
             (0x0022_u16, Instruction { dissassembly: String::from("LD (HL+),A"), bytes: 1, func: CPU::op_ld_mem_hl_inc_a }),
             (0x0036_u16, Instruction { dissassembly: String::from("LD (HL),d8"), bytes: 1, func: CPU::op_ld_mem_hl_d8 }),
@@ -280,16 +272,17 @@ impl CPU {
             (0x00C2_u16, Instruction { dissassembly: String::from("JP NZ,a16"), bytes: 3, func: CPU::op_jp_nz_a16 }),
             (0x00CA_u16, Instruction { dissassembly: String::from("JP Z,a16"), bytes: 3, func: CPU::op_jp_z_a16 }),
             (0x00D2_u16, Instruction { dissassembly: String::from("JP NC,a16"), bytes: 3, func: CPU::op_jp_nc_a16 }),
+            (0x00DA_u16, Instruction { dissassembly: String::from("JP C,a16"), bytes: 3, func: CPU::op_jp_c_a16 }),
             (0x0018_u16, Instruction { dissassembly: String::from("JR s8"), bytes: 2, func: CPU::op_jr_s8 }),
             (0x0020_u16, Instruction { dissassembly: String::from("JR NZ,s8"), bytes: 2, func: CPU::op_jr_nz_s8 }),
             (0x0028_u16, Instruction { dissassembly: String::from("JR Z,s8"), bytes: 2, func: CPU::op_jr_z_s8 }),
             (0x0030_u16, Instruction { dissassembly: String::from("JR NC,s8"), bytes: 2, func: CPU::op_jr_nc_s8 }),
             (0x0038_u16, Instruction { dissassembly: String::from("JR C,s8"), bytes: 2, func: CPU::op_jr_c_s8 }),
-            
             (0x00CD_u16, Instruction { dissassembly: String::from("CALL a16"), bytes: 3, func: CPU::op_call_a16 }),
             (0x00C4_u16, Instruction { dissassembly: String::from("CALL NZ,a16"), bytes: 3, func: CPU::op_call_nz_a16 }),
             (0x00CC_u16, Instruction { dissassembly: String::from("CALL Z,a16"), bytes: 3, func: CPU::op_call_z_a16 }),
             (0x00D4_u16, Instruction { dissassembly: String::from("CALL NC,a16"), bytes: 3, func: CPU::op_call_nc_a16 }),
+            (0x00DC_u16, Instruction { dissassembly: String::from("CALL C,a16"), bytes: 3, func: CPU::op_call_c_a16 }),
             (0x00C0_u16, Instruction { dissassembly: String::from("RET NZ"), bytes: 1, func: CPU::op_ret_nz }),
             (0x00C9_u16, Instruction { dissassembly: String::from("RET"), bytes: 1, func: CPU::op_ret }),
             (0x00C8_u16, Instruction { dissassembly: String::from("RET Z"), bytes: 1, func: CPU::op_ret_z }),
@@ -308,8 +301,8 @@ impl CPU {
 
             (0x0017_u16, Instruction { dissassembly: String::from("RLA"), bytes: 1, func: CPU::op_rla }),
             (0x001F_u16, Instruction { dissassembly: String::from("RRA"), bytes: 1, func: CPU::op_rra }),
-
             (0x0007_u16, Instruction { dissassembly: String::from("RLCA"), bytes: 1, func: CPU::op_rlca }),
+            (0x000F_u16, Instruction { dissassembly: String::from("RRCA"), bytes: 1, func: CPU::op_rrca }),
             
             (0x00CF_u16, Instruction { dissassembly: String::from("RST 1"), bytes: 1, func: CPU::op_rst_1 }),
             (0x00D7_u16, Instruction { dissassembly: String::from("RST 2"), bytes: 1, func: CPU::op_rst_2 }),
@@ -322,6 +315,7 @@ impl CPU {
             (0x00F3_u16, Instruction { dissassembly: String::from("DI"), bytes: 1, func: CPU::op_di }),
             (0x00FB_u16, Instruction { dissassembly: String::from("EI"), bytes: 1, func: CPU::op_ei }),
             
+            // 16 bit opcodes
             (0xCB17_u16, Instruction { dissassembly: String::from("RL A"), bytes: 2, func: CPU::op_rl_a }),
             (0xCB10_u16, Instruction { dissassembly: String::from("RL B"), bytes: 2, func: CPU::op_rl_b }),
             (0xCB11_u16, Instruction { dissassembly: String::from("RL C"), bytes: 2, func: CPU::op_rl_c }),
@@ -329,7 +323,6 @@ impl CPU {
             (0xCB13_u16, Instruction { dissassembly: String::from("RL E"), bytes: 2, func: CPU::op_rl_e }),
             (0xCB14_u16, Instruction { dissassembly: String::from("RL H"), bytes: 2, func: CPU::op_rl_h }),
             (0xCB15_u16, Instruction { dissassembly: String::from("RL L"), bytes: 2, func: CPU::op_rl_l }),
-
             (0xCB1F_u16, Instruction { dissassembly: String::from("RR A"), bytes: 2, func: CPU::op_rr_a }),
             (0xCB18_u16, Instruction { dissassembly: String::from("RR B"), bytes: 2, func: CPU::op_rr_b }),
             (0xCB19_u16, Instruction { dissassembly: String::from("RR C"), bytes: 2, func: CPU::op_rr_c }),
@@ -337,7 +330,6 @@ impl CPU {
             (0xCB1B_u16, Instruction { dissassembly: String::from("RR E"), bytes: 2, func: CPU::op_rr_e }),
             (0xCB1C_u16, Instruction { dissassembly: String::from("RR H"), bytes: 2, func: CPU::op_rr_h }),
             (0xCB1D_u16, Instruction { dissassembly: String::from("RR L"), bytes: 2, func: CPU::op_rr_l }),
-
             (0xCB27_u16, Instruction { dissassembly: String::from("SLA A"), bytes: 2, func: CPU::op_sla_a }),
             (0xCB20_u16, Instruction { dissassembly: String::from("SLA B"), bytes: 2, func: CPU::op_sla_b }),
             (0xCB21_u16, Instruction { dissassembly: String::from("SLA C"), bytes: 2, func: CPU::op_sla_c }),
@@ -368,7 +360,6 @@ impl CPU {
             (0xCB43_u16, Instruction { dissassembly: String::from("BIT 0,E"), bytes: 2, func: CPU::op_bit0_e }),
             (0xCB44_u16, Instruction { dissassembly: String::from("BIT 0,H"), bytes: 2, func: CPU::op_bit0_h }),
             (0xCB45_u16, Instruction { dissassembly: String::from("BIT 0,L"), bytes: 2, func: CPU::op_bit0_l }),
-
             (0xCB4F_u16, Instruction { dissassembly: String::from("BIT 1,A"), bytes: 2, func: CPU::op_bit1_a }),
             (0xCB48_u16, Instruction { dissassembly: String::from("BIT 1,B"), bytes: 2, func: CPU::op_bit1_b }),
             (0xCB49_u16, Instruction { dissassembly: String::from("BIT 1,C"), bytes: 2, func: CPU::op_bit1_c }),
@@ -376,7 +367,6 @@ impl CPU {
             (0xCB4B_u16, Instruction { dissassembly: String::from("BIT 1,E"), bytes: 2, func: CPU::op_bit1_e }),
             (0xCB4C_u16, Instruction { dissassembly: String::from("BIT 1,H"), bytes: 2, func: CPU::op_bit1_h }),
             (0xCB4D_u16, Instruction { dissassembly: String::from("BIT 1,L"), bytes: 2, func: CPU::op_bit1_l }),
-
             (0xCB57_u16, Instruction { dissassembly: String::from("BIT 2,A"), bytes: 2, func: CPU::op_bit2_a }),
             (0xCB50_u16, Instruction { dissassembly: String::from("BIT 2,B"), bytes: 2, func: CPU::op_bit2_b }),
             (0xCB51_u16, Instruction { dissassembly: String::from("BIT 2,C"), bytes: 2, func: CPU::op_bit2_c }),
@@ -384,7 +374,6 @@ impl CPU {
             (0xCB53_u16, Instruction { dissassembly: String::from("BIT 2,E"), bytes: 2, func: CPU::op_bit2_e }),
             (0xCB54_u16, Instruction { dissassembly: String::from("BIT 2,H"), bytes: 2, func: CPU::op_bit2_h }),
             (0xCB55_u16, Instruction { dissassembly: String::from("BIT 2,L"), bytes: 2, func: CPU::op_bit2_l }),
-
             (0xCB5F_u16, Instruction { dissassembly: String::from("BIT 3,A"), bytes: 2, func: CPU::op_bit3_a }),
             (0xCB58_u16, Instruction { dissassembly: String::from("BIT 3,B"), bytes: 2, func: CPU::op_bit3_b }),
             (0xCB59_u16, Instruction { dissassembly: String::from("BIT 3,C"), bytes: 2, func: CPU::op_bit3_c }),
@@ -392,7 +381,6 @@ impl CPU {
             (0xCB5B_u16, Instruction { dissassembly: String::from("BIT 3,E"), bytes: 2, func: CPU::op_bit3_e }),
             (0xCB5C_u16, Instruction { dissassembly: String::from("BIT 3,H"), bytes: 2, func: CPU::op_bit3_h }),
             (0xCB5D_u16, Instruction { dissassembly: String::from("BIT 3,L"), bytes: 2, func: CPU::op_bit3_l }),
-
             (0xCB67_u16, Instruction { dissassembly: String::from("BIT 4,A"), bytes: 2, func: CPU::op_bit4_a }),
             (0xCB60_u16, Instruction { dissassembly: String::from("BIT 4,B"), bytes: 2, func: CPU::op_bit4_b }),
             (0xCB61_u16, Instruction { dissassembly: String::from("BIT 4,C"), bytes: 2, func: CPU::op_bit4_c }),
@@ -400,7 +388,6 @@ impl CPU {
             (0xCB63_u16, Instruction { dissassembly: String::from("BIT 4,E"), bytes: 2, func: CPU::op_bit4_e }),
             (0xCB64_u16, Instruction { dissassembly: String::from("BIT 4,H"), bytes: 2, func: CPU::op_bit4_h }),
             (0xCB65_u16, Instruction { dissassembly: String::from("BIT 4,L"), bytes: 2, func: CPU::op_bit4_l }),
-
             (0xCB6F_u16, Instruction { dissassembly: String::from("BIT 5,A"), bytes: 2, func: CPU::op_bit5_a }),
             (0xCB68_u16, Instruction { dissassembly: String::from("BIT 5,B"), bytes: 2, func: CPU::op_bit5_b }),
             (0xCB69_u16, Instruction { dissassembly: String::from("BIT 5,C"), bytes: 2, func: CPU::op_bit5_c }),
@@ -408,7 +395,6 @@ impl CPU {
             (0xCB6B_u16, Instruction { dissassembly: String::from("BIT 5,E"), bytes: 2, func: CPU::op_bit5_e }),
             (0xCB6C_u16, Instruction { dissassembly: String::from("BIT 5,H"), bytes: 2, func: CPU::op_bit5_h }),
             (0xCB6D_u16, Instruction { dissassembly: String::from("BIT 5,L"), bytes: 2, func: CPU::op_bit5_l }),
-
             (0xCB77_u16, Instruction { dissassembly: String::from("BIT 6,A"), bytes: 2, func: CPU::op_bit6_a }),
             (0xCB70_u16, Instruction { dissassembly: String::from("BIT 6,B"), bytes: 2, func: CPU::op_bit6_b }),
             (0xCB71_u16, Instruction { dissassembly: String::from("BIT 6,C"), bytes: 2, func: CPU::op_bit6_c }),
@@ -416,7 +402,6 @@ impl CPU {
             (0xCB73_u16, Instruction { dissassembly: String::from("BIT 6,E"), bytes: 2, func: CPU::op_bit6_e }),
             (0xCB74_u16, Instruction { dissassembly: String::from("BIT 6,H"), bytes: 2, func: CPU::op_bit6_h }),
             (0xCB75_u16, Instruction { dissassembly: String::from("BIT 6,L"), bytes: 2, func: CPU::op_bit6_l }),
-
             (0xCB7F_u16, Instruction { dissassembly: String::from("BIT 7,A"), bytes: 2, func: CPU::op_bit7_a }),
             (0xCB78_u16, Instruction { dissassembly: String::from("BIT 7,B"), bytes: 2, func: CPU::op_bit7_b }),
             (0xCB79_u16, Instruction { dissassembly: String::from("BIT 7,C"), bytes: 2, func: CPU::op_bit7_c }),
@@ -424,7 +409,6 @@ impl CPU {
             (0xCB7B_u16, Instruction { dissassembly: String::from("BIT 7,E"), bytes: 2, func: CPU::op_bit7_e }),
             (0xCB7C_u16, Instruction { dissassembly: String::from("BIT 7,H"), bytes: 2, func: CPU::op_bit7_h }),
             (0xCB7D_u16, Instruction { dissassembly: String::from("BIT 7,L"), bytes: 2, func: CPU::op_bit7_l }),
-
             (0xCB46_u16, Instruction { dissassembly: String::from("BIT 0,(HL)"), bytes: 2, func: CPU::op_bit0_mem_hl }),
             (0xCB4E_u16, Instruction { dissassembly: String::from("BIT 1,(HL)"), bytes: 2, func: CPU::op_bit1_mem_hl }),
             (0xCB56_u16, Instruction { dissassembly: String::from("BIT 2,(HL)"), bytes: 2, func: CPU::op_bit2_mem_hl }),
@@ -434,6 +418,63 @@ impl CPU {
             (0xCB76_u16, Instruction { dissassembly: String::from("BIT 6,(HL)"), bytes: 2, func: CPU::op_bit6_mem_hl }),
             (0xCB7E_u16, Instruction { dissassembly: String::from("BIT 7,(HL)"), bytes: 2, func: CPU::op_bit7_mem_hl }),
 
+            (0xCBC7_u16, Instruction { dissassembly: String::from("SET 0,A"), bytes: 2, func: CPU::op_set0_a }),
+            (0xCBC0_u16, Instruction { dissassembly: String::from("SET 0,B"), bytes: 2, func: CPU::op_set0_b }),
+            (0xCBC1_u16, Instruction { dissassembly: String::from("SET 0,C"), bytes: 2, func: CPU::op_set0_c }),
+            (0xCBC2_u16, Instruction { dissassembly: String::from("SET 0,D"), bytes: 2, func: CPU::op_set0_d }),
+            (0xCBC3_u16, Instruction { dissassembly: String::from("SET 0,E"), bytes: 2, func: CPU::op_set0_e }),
+            (0xCBC4_u16, Instruction { dissassembly: String::from("SET 0,H"), bytes: 2, func: CPU::op_set0_h }),
+            (0xCBC5_u16, Instruction { dissassembly: String::from("SET 0,L"), bytes: 2, func: CPU::op_set0_l }),
+            (0xCBCF_u16, Instruction { dissassembly: String::from("SET 1,A"), bytes: 2, func: CPU::op_set1_a }),
+            (0xCBC8_u16, Instruction { dissassembly: String::from("SET 1,B"), bytes: 2, func: CPU::op_set1_b }),
+            (0xCBC9_u16, Instruction { dissassembly: String::from("SET 1,C"), bytes: 2, func: CPU::op_set1_c }),
+            (0xCBCA_u16, Instruction { dissassembly: String::from("SET 1,D"), bytes: 2, func: CPU::op_set1_d }),
+            (0xCBCB_u16, Instruction { dissassembly: String::from("SET 1,E"), bytes: 2, func: CPU::op_set1_e }),
+            (0xCBCC_u16, Instruction { dissassembly: String::from("SET 1,H"), bytes: 2, func: CPU::op_set1_h }),
+            (0xCBCD_u16, Instruction { dissassembly: String::from("SET 1,L"), bytes: 2, func: CPU::op_set1_l }),
+            (0xCBD7_u16, Instruction { dissassembly: String::from("SET 2,A"), bytes: 2, func: CPU::op_set2_a }),
+            (0xCBD0_u16, Instruction { dissassembly: String::from("SET 2,B"), bytes: 2, func: CPU::op_set2_b }),
+            (0xCBD1_u16, Instruction { dissassembly: String::from("SET 2,C"), bytes: 2, func: CPU::op_set2_c }),
+            (0xCBD2_u16, Instruction { dissassembly: String::from("SET 2,D"), bytes: 2, func: CPU::op_set2_d }),
+            (0xCBD3_u16, Instruction { dissassembly: String::from("SET 2,E"), bytes: 2, func: CPU::op_set2_e }),
+            (0xCBD4_u16, Instruction { dissassembly: String::from("SET 2,H"), bytes: 2, func: CPU::op_set2_h }),
+            (0xCBD5_u16, Instruction { dissassembly: String::from("SET 2,L"), bytes: 2, func: CPU::op_set2_l }),
+            (0xCBDF_u16, Instruction { dissassembly: String::from("SET 3,A"), bytes: 2, func: CPU::op_set3_a }),
+            (0xCBD8_u16, Instruction { dissassembly: String::from("SET 3,B"), bytes: 2, func: CPU::op_set3_b }),
+            (0xCBD9_u16, Instruction { dissassembly: String::from("SET 3,C"), bytes: 2, func: CPU::op_set3_c }),
+            (0xCBDA_u16, Instruction { dissassembly: String::from("SET 3,D"), bytes: 2, func: CPU::op_set3_d }),
+            (0xCBDB_u16, Instruction { dissassembly: String::from("SET 3,E"), bytes: 2, func: CPU::op_set3_e }),
+            (0xCBDC_u16, Instruction { dissassembly: String::from("SET 3,H"), bytes: 2, func: CPU::op_set3_h }),
+            (0xCBDD_u16, Instruction { dissassembly: String::from("SET 3,L"), bytes: 2, func: CPU::op_set3_l }),
+            (0xCBE7_u16, Instruction { dissassembly: String::from("SET 4,A"), bytes: 2, func: CPU::op_set4_a }),
+            (0xCBE0_u16, Instruction { dissassembly: String::from("SET 4,B"), bytes: 2, func: CPU::op_set4_b }),
+            (0xCBE1_u16, Instruction { dissassembly: String::from("SET 4,C"), bytes: 2, func: CPU::op_set4_c }),
+            (0xCBE2_u16, Instruction { dissassembly: String::from("SET 4,D"), bytes: 2, func: CPU::op_set4_d }),
+            (0xCBE3_u16, Instruction { dissassembly: String::from("SET 4,E"), bytes: 2, func: CPU::op_set4_e }),
+            (0xCBE4_u16, Instruction { dissassembly: String::from("SET 4,H"), bytes: 2, func: CPU::op_set4_h }),
+            (0xCBE5_u16, Instruction { dissassembly: String::from("SET 4,L"), bytes: 2, func: CPU::op_set4_l }),
+            (0xCBEF_u16, Instruction { dissassembly: String::from("SET 5,A"), bytes: 2, func: CPU::op_set5_a }),
+            (0xCBE8_u16, Instruction { dissassembly: String::from("SET 5,B"), bytes: 2, func: CPU::op_set5_b }),
+            (0xCBE9_u16, Instruction { dissassembly: String::from("SET 5,C"), bytes: 2, func: CPU::op_set5_c }),
+            (0xCBEA_u16, Instruction { dissassembly: String::from("SET 5,D"), bytes: 2, func: CPU::op_set5_d }),
+            (0xCBEB_u16, Instruction { dissassembly: String::from("SET 5,E"), bytes: 2, func: CPU::op_set5_e }),
+            (0xCBEC_u16, Instruction { dissassembly: String::from("SET 5,H"), bytes: 2, func: CPU::op_set5_h }),
+            (0xCBED_u16, Instruction { dissassembly: String::from("SET 5,L"), bytes: 2, func: CPU::op_set5_l }),
+            (0xCBF7_u16, Instruction { dissassembly: String::from("SET 6,A"), bytes: 2, func: CPU::op_set6_a }),
+            (0xCBF0_u16, Instruction { dissassembly: String::from("SET 6,B"), bytes: 2, func: CPU::op_set6_b }),
+            (0xCBF1_u16, Instruction { dissassembly: String::from("SET 6,C"), bytes: 2, func: CPU::op_set6_c }),
+            (0xCBF2_u16, Instruction { dissassembly: String::from("SET 6,D"), bytes: 2, func: CPU::op_set6_d }),
+            (0xCBF3_u16, Instruction { dissassembly: String::from("SET 6,E"), bytes: 2, func: CPU::op_set6_e }),
+            (0xCBF4_u16, Instruction { dissassembly: String::from("SET 6,H"), bytes: 2, func: CPU::op_set6_h }),
+            (0xCBF5_u16, Instruction { dissassembly: String::from("SET 6,L"), bytes: 2, func: CPU::op_set6_l }),
+            (0xCBFF_u16, Instruction { dissassembly: String::from("SET 7,A"), bytes: 2, func: CPU::op_set7_a }),
+            (0xCBF8_u16, Instruction { dissassembly: String::from("SET 7,B"), bytes: 2, func: CPU::op_set7_b }),
+            (0xCBF9_u16, Instruction { dissassembly: String::from("SET 7,C"), bytes: 2, func: CPU::op_set7_c }),
+            (0xCBFA_u16, Instruction { dissassembly: String::from("SET 7,D"), bytes: 2, func: CPU::op_set7_d }),
+            (0xCBFB_u16, Instruction { dissassembly: String::from("SET 7,E"), bytes: 2, func: CPU::op_set7_e }),
+            (0xCBFC_u16, Instruction { dissassembly: String::from("SET 7,H"), bytes: 2, func: CPU::op_set7_h }),
+            (0xCBFD_u16, Instruction { dissassembly: String::from("SET 7,L"), bytes: 2, func: CPU::op_set7_l }),
+
             (0xCB87_u16, Instruction { dissassembly: String::from("RES 0,A"), bytes: 2, func: CPU::op_res0_a }),
             (0xCB80_u16, Instruction { dissassembly: String::from("RES 0,B"), bytes: 2, func: CPU::op_res0_b }),
             (0xCB81_u16, Instruction { dissassembly: String::from("RES 0,C"), bytes: 2, func: CPU::op_res0_c }),
@@ -441,7 +482,6 @@ impl CPU {
             (0xCB83_u16, Instruction { dissassembly: String::from("RES 0,E"), bytes: 2, func: CPU::op_res0_e }),
             (0xCB84_u16, Instruction { dissassembly: String::from("RES 0,H"), bytes: 2, func: CPU::op_res0_h }),
             (0xCB85_u16, Instruction { dissassembly: String::from("RES 0,L"), bytes: 2, func: CPU::op_res0_l }),
-
             (0xCB8F_u16, Instruction { dissassembly: String::from("RES 1,A"), bytes: 2, func: CPU::op_res1_a }),
             (0xCB88_u16, Instruction { dissassembly: String::from("RES 1,B"), bytes: 2, func: CPU::op_res1_b }),
             (0xCB89_u16, Instruction { dissassembly: String::from("RES 1,C"), bytes: 2, func: CPU::op_res1_c }),
@@ -449,7 +489,6 @@ impl CPU {
             (0xCB8B_u16, Instruction { dissassembly: String::from("RES 1,E"), bytes: 2, func: CPU::op_res1_e }),
             (0xCB8C_u16, Instruction { dissassembly: String::from("RES 1,H"), bytes: 2, func: CPU::op_res1_h }),
             (0xCB8D_u16, Instruction { dissassembly: String::from("RES 1,L"), bytes: 2, func: CPU::op_res1_l }),
-
             (0xCB97_u16, Instruction { dissassembly: String::from("RES 2,A"), bytes: 2, func: CPU::op_res2_a }),
             (0xCB90_u16, Instruction { dissassembly: String::from("RES 2,B"), bytes: 2, func: CPU::op_res2_b }),
             (0xCB91_u16, Instruction { dissassembly: String::from("RES 2,C"), bytes: 2, func: CPU::op_res2_c }),
@@ -457,7 +496,6 @@ impl CPU {
             (0xCB93_u16, Instruction { dissassembly: String::from("RES 2,E"), bytes: 2, func: CPU::op_res2_e }),
             (0xCB94_u16, Instruction { dissassembly: String::from("RES 2,H"), bytes: 2, func: CPU::op_res2_h }),
             (0xCB95_u16, Instruction { dissassembly: String::from("RES 2,L"), bytes: 2, func: CPU::op_res2_l }),
-
             (0xCB9F_u16, Instruction { dissassembly: String::from("RES 3,A"), bytes: 2, func: CPU::op_res3_a }),
             (0xCB98_u16, Instruction { dissassembly: String::from("RES 3,B"), bytes: 2, func: CPU::op_res3_b }),
             (0xCB99_u16, Instruction { dissassembly: String::from("RES 3,C"), bytes: 2, func: CPU::op_res3_c }),
@@ -465,7 +503,6 @@ impl CPU {
             (0xCB9B_u16, Instruction { dissassembly: String::from("RES 3,E"), bytes: 2, func: CPU::op_res3_e }),
             (0xCB9C_u16, Instruction { dissassembly: String::from("RES 3,H"), bytes: 2, func: CPU::op_res3_h }),
             (0xCB9D_u16, Instruction { dissassembly: String::from("RES 3,L"), bytes: 2, func: CPU::op_res3_l }),
-
             (0xCBA7_u16, Instruction { dissassembly: String::from("RES 4,A"), bytes: 2, func: CPU::op_res4_a }),
             (0xCBA0_u16, Instruction { dissassembly: String::from("RES 4,B"), bytes: 2, func: CPU::op_res4_b }),
             (0xCBA1_u16, Instruction { dissassembly: String::from("RES 4,C"), bytes: 2, func: CPU::op_res4_c }),
@@ -473,7 +510,6 @@ impl CPU {
             (0xCBA3_u16, Instruction { dissassembly: String::from("RES 4,E"), bytes: 2, func: CPU::op_res4_e }),
             (0xCBA4_u16, Instruction { dissassembly: String::from("RES 4,H"), bytes: 2, func: CPU::op_res4_h }),
             (0xCBA5_u16, Instruction { dissassembly: String::from("RES 4,L"), bytes: 2, func: CPU::op_res4_l }),
-
             (0xCBAF_u16, Instruction { dissassembly: String::from("RES 5,A"), bytes: 2, func: CPU::op_res5_a }),
             (0xCBA8_u16, Instruction { dissassembly: String::from("RES 5,B"), bytes: 2, func: CPU::op_res5_b }),
             (0xCBA9_u16, Instruction { dissassembly: String::from("RES 5,C"), bytes: 2, func: CPU::op_res5_c }),
@@ -481,7 +517,6 @@ impl CPU {
             (0xCBAB_u16, Instruction { dissassembly: String::from("RES 5,E"), bytes: 2, func: CPU::op_res5_e }),
             (0xCBAC_u16, Instruction { dissassembly: String::from("RES 5,H"), bytes: 2, func: CPU::op_res5_h }),
             (0xCBAD_u16, Instruction { dissassembly: String::from("RES 5,L"), bytes: 2, func: CPU::op_res5_l }),
-
             (0xCBB7_u16, Instruction { dissassembly: String::from("RES 6,A"), bytes: 2, func: CPU::op_res6_a }),
             (0xCBB0_u16, Instruction { dissassembly: String::from("RES 6,B"), bytes: 2, func: CPU::op_res6_b }),
             (0xCBB1_u16, Instruction { dissassembly: String::from("RES 6,C"), bytes: 2, func: CPU::op_res6_c }),
@@ -489,7 +524,6 @@ impl CPU {
             (0xCBB3_u16, Instruction { dissassembly: String::from("RES 6,E"), bytes: 2, func: CPU::op_res6_e }),
             (0xCBB4_u16, Instruction { dissassembly: String::from("RES 6,H"), bytes: 2, func: CPU::op_res6_h }),
             (0xCBB5_u16, Instruction { dissassembly: String::from("RES 6,L"), bytes: 2, func: CPU::op_res6_l }),
-
             (0xCBBF_u16, Instruction { dissassembly: String::from("RES 7,A"), bytes: 2, func: CPU::op_res7_a }),
             (0xCBB8_u16, Instruction { dissassembly: String::from("RES 7,B"), bytes: 2, func: CPU::op_res7_b }),
             (0xCBB9_u16, Instruction { dissassembly: String::from("RES 7,C"), bytes: 2, func: CPU::op_res7_c }),
@@ -497,7 +531,6 @@ impl CPU {
             (0xCBBB_u16, Instruction { dissassembly: String::from("RES 7,E"), bytes: 2, func: CPU::op_res7_e }),
             (0xCBBC_u16, Instruction { dissassembly: String::from("RES 7,H"), bytes: 2, func: CPU::op_res7_h }),
             (0xCBBD_u16, Instruction { dissassembly: String::from("RES 7,L"), bytes: 2, func: CPU::op_res7_l }),
-
             (0xCB86_u16, Instruction { dissassembly: String::from("RES 0,(HL)"), bytes: 2, func: CPU::op_res0_mem_hl }),
             (0xCB8E_u16, Instruction { dissassembly: String::from("RES 1,(HL)"), bytes: 2, func: CPU::op_res1_mem_hl }),
             (0xCB96_u16, Instruction { dissassembly: String::from("RES 2,(HL)"), bytes: 2, func: CPU::op_res2_mem_hl }),
@@ -543,12 +576,12 @@ impl CPU {
 
         if !self.halt {
             let op : u16;
-            let b1: u8 = self.read_memory_from_pc();
+            let b1: u8 = self.read_byte_from_pc();
             if b1 != 0xCB {
                 op = b1 as u16;
             }
             else {
-                let b2: u8 = self.read_memory_from_pc();
+                let b2: u8 = self.read_byte_from_pc();
                 op = (b1 as u16) << 8 | (b2 as u16);
             }
 
@@ -561,7 +594,7 @@ impl CPU {
             let dis = inst.dissassembly.clone();
 
             // if pc == 0xc319 {
-            // self.debug = true;
+            self.debug = true;
             // }
 
             if self.debug {
@@ -626,7 +659,7 @@ impl CPU {
         bus.write_byte(0xFF0F, iif);
     }
 
-    fn read_memory_from_pc(&mut self) -> u8 {
+    fn read_byte_from_pc(&mut self) -> u8 {
         let b = self.read_memory(self.registers.pc);
         self.registers.pc += 1;
         
@@ -637,8 +670,17 @@ impl CPU {
         self.bus.borrow().read_byte(address)
     }
 
+    fn read_word_from_pc(&mut self) -> u16 {
+        self.read_byte_from_pc() as u16 | ((self.read_byte_from_pc() as u16) << 8)
+    }
+
     fn write_memory(&self, address: u16, data: u8) {
         self.bus.borrow_mut().write_byte(address, data);
+    }
+
+    fn write_word(&self, address: u16, data: u16) {
+        self.write_memory(address, (data & 0xFF) as u8);
+        self.write_memory(address + 1, ((data & 0xFF00) >> 8) as u8);
     }
 
     // INSTRUCTIONS
@@ -722,14 +764,14 @@ impl CPU {
     }
 
     fn op_inc_mem_hl(cpu: &mut CPU) -> u8 {
-        let hl: u16 = (cpu.registers.h as u16) << 8 | (cpu.registers.l as u16);
+        let hl = cpu.get_hl();
         let v = cpu.read_memory(hl);
         let r = v.wrapping_add(1);
         cpu.write_memory(hl, r);
 
-        cpu.set_flag(FLAG_Z, cpu.registers.a == 0);
-        cpu.set_flag(FLAG_N, false);
-        cpu.set_flag(FLAG_H, v & 0x0F == 0x0F);
+        set_flag2(&mut cpu.registers.f, FLAG_Z, cpu.registers.a == 0);
+        set_flag2(&mut cpu.registers.f, FLAG_N, false);
+        set_flag2(&mut cpu.registers.f, FLAG_H, v & 0x0F == 0x0F);
 
         3
     }
@@ -799,7 +841,7 @@ impl CPU {
     }
     
     fn op_dec_mem_hl(cpu: &mut CPU) -> u8 {
-        let hl: u16 = (cpu.registers.h as u16) << 8 | (cpu.registers.l as u16);
+        let hl = cpu.get_hl();
         let v = cpu.read_memory(hl).wrapping_sub(1);
         cpu.write_memory(hl, v);
 
@@ -840,14 +882,14 @@ impl CPU {
     }
 
     fn op_add_a_d8(cpu: &mut CPU) -> u8 {
-        let d8 = cpu.read_memory_from_pc();
+        let d8 = cpu.read_byte_from_pc();
         add_reg(&mut cpu.registers.a, d8, &mut cpu.registers.f);
 
         2
     }
 
     fn op_add_a_mem_hl(cpu: &mut CPU) -> u8 {
-        let hl = ((cpu.registers.h as u16) << 8) | cpu.registers.l as u16;
+        let hl = cpu.get_hl();
         let v = cpu.read_memory(hl);
 
         add_reg(&mut cpu.registers.a, v, &mut cpu.registers.f);
@@ -896,7 +938,7 @@ impl CPU {
     }
 
     fn op_add_sp_s8(cpu: &mut CPU) -> u8 {
-        let s8: i8 = cpu.read_memory_from_pc() as i8;
+        let s8: i8 = cpu.read_byte_from_pc() as i8;
         
         let is_half_carry = (( ((cpu.registers.sp & 0xFF) as i16) + ((s8 as i16) & 0xFF)) & 0x100) != 0;
         let is_full_carry = (((cpu.registers.sp as u32 & 0xFFFF) + (s8 as u32 & 0xFFFF)) & 0x10000) != 0;
@@ -940,7 +982,7 @@ impl CPU {
     }
 
     fn op_sub_d8(cpu: &mut CPU) -> u8 {
-        let d8 = cpu.read_memory_from_pc();
+        let d8 = cpu.read_byte_from_pc();
         sub(&mut cpu.registers.a, d8, &mut cpu.registers.f) + 1
     }
 
@@ -980,7 +1022,7 @@ impl CPU {
     }
 
     fn op_adc_a_d8(cpu: &mut CPU) -> u8 {
-        let d8 = cpu.read_memory_from_pc();
+        let d8 = cpu.read_byte_from_pc();
         adc_reg(&mut cpu.registers.a, d8, &mut cpu.registers.f)
     }
 
@@ -1020,7 +1062,7 @@ impl CPU {
     }
 
     fn op_sbc_a_d8(cpu: &mut CPU) -> u8 {
-        let d8 = cpu.read_memory_from_pc();
+        let d8 = cpu.read_byte_from_pc();
         sbc_reg(&mut cpu.registers.a, d8, &mut cpu.registers.f)
     }
 
@@ -1049,6 +1091,13 @@ impl CPU {
         
         cpu.set_flag(FLAG_Z, cpu.registers.a == 0);
         cpu.set_flag(FLAG_H, false);
+
+        1
+    }
+
+    fn op_ccf(cpu: &mut CPU) -> u8 {
+        let cy = get_flag2(&cpu.registers.f, FLAG_C);
+        set_flag2(&mut cpu.registers.f, FLAG_C, !cy);
 
         1
     }
@@ -1082,7 +1131,7 @@ impl CPU {
     }
 
     fn op_cp_d8(cpu: &mut CPU) -> u8 {
-        let d8 = cpu.read_memory_from_pc();
+        let d8 = cpu.read_byte_from_pc();
         cp_reg(cpu.registers.a, d8, &mut cpu.registers.f)
     }
     
@@ -1399,86 +1448,70 @@ impl CPU {
     }
 
     fn op_ld_a_d8(cpu: &mut CPU) -> u8 {
-        cpu.registers.a = cpu.read_memory_from_pc();
+        cpu.registers.a = cpu.read_byte_from_pc();
 
         2
     }
 
     fn op_ld_b_d8(cpu: &mut CPU) -> u8 {
-        cpu.registers.b = cpu.read_memory_from_pc();
+        cpu.registers.b = cpu.read_byte_from_pc();
 
         2
     }    
 
     fn op_ld_c_d8(cpu: &mut CPU) -> u8 {
-        cpu.registers.c = cpu.read_memory_from_pc();
+        cpu.registers.c = cpu.read_byte_from_pc();
 
         2
     }
 
     fn op_ld_d_d8(cpu: &mut CPU) -> u8 {
-        cpu.registers.d = cpu.read_memory_from_pc();
+        cpu.registers.d = cpu.read_byte_from_pc();
 
         2
     }
 
     fn op_ld_e_d8(cpu: &mut CPU) -> u8 {
-        cpu.registers.e = cpu.read_memory_from_pc();
+        cpu.registers.e = cpu.read_byte_from_pc();
 
         2
     }
 
     fn op_ld_l_d8(cpu: &mut CPU) -> u8 {
-        cpu.registers.l = cpu.read_memory_from_pc();
+        cpu.registers.l = cpu.read_byte_from_pc();
 
         2
     }
 
     fn op_ld_h_d8(cpu: &mut CPU) -> u8 {
-        cpu.registers.h = cpu.read_memory_from_pc();
+        cpu.registers.h = cpu.read_byte_from_pc();
 
         2
     }
 
     fn op_ld_bc_d16(cpu: &mut CPU) -> u8 {
-        let l = cpu.read_memory_from_pc();
-        let h = cpu.read_memory_from_pc();
-
-        if h == 0x12 && l == 0x00 {
-            println!("found it");
-        }
-
-        cpu.registers.b = h;
-        cpu.registers.c = l;
+        cpu.registers.c = cpu.read_byte_from_pc();
+        cpu.registers.b = cpu.read_byte_from_pc();
 
         3
     }
 
     fn op_ld_de_d16(cpu: &mut CPU) -> u8 {
-        let l = cpu.read_memory_from_pc();
-        let h = cpu.read_memory_from_pc();
-
-        cpu.registers.d = h;
-        cpu.registers.e = l;
+        cpu.registers.e = cpu.read_byte_from_pc();
+        cpu.registers.d = cpu.read_byte_from_pc();
 
         3
     }
 
     fn op_ld_hl_d16(cpu: &mut CPU) -> u8 {
-        let l = cpu.read_memory_from_pc();
-        let h = cpu.read_memory_from_pc();
-
-        cpu.registers.h = h;
-        cpu.registers.l = l;
+        cpu.registers.l = cpu.read_byte_from_pc();
+        cpu.registers.h = cpu.read_byte_from_pc();
 
         3
     }
 
     fn op_ld_sp_d16(cpu: &mut CPU) -> u8 {
-        let l = cpu.read_memory_from_pc();
-        let h = cpu.read_memory_from_pc();
-
-        cpu.registers.sp = (h as u16) << 8 | (l as u16);
+        cpu.registers.sp = cpu.read_word_from_pc();
 
         3
     }
@@ -1490,7 +1523,7 @@ impl CPU {
     }
 
     fn op_ld_hl_sp_add_s8(cpu: &mut CPU) -> u8 {
-        let s8 = cpu.read_memory_from_pc() as i8;
+        let s8 = cpu.read_byte_from_pc() as i8;
         let hl = (cpu.registers.sp as i32 + s8 as i32) as u16;
         cpu.set_hl(hl);
 
@@ -1518,49 +1551,49 @@ impl CPU {
     }
 
     fn op_ld_a_mem_hl(cpu: &mut CPU) -> u8 {
-        let hl = ((cpu.registers.h as u16) << 8) | (cpu.registers.l as u16);
+        let hl = cpu.get_hl();
         cpu.registers.a = cpu.read_memory(hl);
 
         2
     }
 
     fn op_ld_b_mem_hl(cpu: &mut CPU) -> u8 {
-        let hl = ((cpu.registers.h as u16) << 8) | (cpu.registers.l as u16);
+        let hl = cpu.get_hl();
         cpu.registers.b = cpu.read_memory(hl);
 
         2
     }
 
     fn op_ld_c_mem_hl(cpu: &mut CPU) -> u8 {
-        let hl = ((cpu.registers.h as u16) << 8) | (cpu.registers.l as u16);
+        let hl = cpu.get_hl();
         cpu.registers.c = cpu.read_memory(hl);
 
         2
     }
 
     fn op_ld_d_mem_hl(cpu: &mut CPU) -> u8 {
-        let hl = ((cpu.registers.h as u16) << 8) | (cpu.registers.l as u16);
+        let hl = cpu.get_hl();
         cpu.registers.d = cpu.read_memory(hl);
 
         2
     }
 
     fn op_ld_e_mem_hl(cpu: &mut CPU) -> u8 {
-        let hl = ((cpu.registers.h as u16) << 8) | (cpu.registers.l as u16);
+        let hl = cpu.get_hl();
         cpu.registers.e = cpu.read_memory(hl);
 
         2
     }
     
     fn op_ld_a_mem_d8(cpu: &mut CPU) -> u8 {
-        let a8 = cpu.read_memory_from_pc();
+        let a8 = cpu.read_byte_from_pc();
         cpu.registers.a = cpu.read_memory(0xFF00 | (a8 as u16));
 
         3
     }
 
     fn op_ld_a_mem_a16(cpu: &mut CPU) -> u8 {
-        let a16 = (cpu.read_memory_from_pc() as u16) | ((cpu.read_memory_from_pc() as u16) << 8);
+        let a16 = cpu.read_word_from_pc();
         cpu.registers.a = cpu.read_memory(a16);
 
         4
@@ -1610,35 +1643,35 @@ impl CPU {
     }
 
     fn op_ld_mem_hl_a(cpu: &mut CPU) -> u8 {
-        let hl: u16 = (cpu.registers.h as u16) << 8 | (cpu.registers.l as u16);
+        let hl = cpu.get_hl();
         cpu.write_memory(hl, cpu.registers.a);
 
         2
     }
 
     fn op_ld_mem_hl_b(cpu: &mut CPU) -> u8 {
-        let hl: u16 = (cpu.registers.h as u16) << 8 | (cpu.registers.l as u16);
+        let hl = cpu.get_hl();
         cpu.write_memory(hl, cpu.registers.b);
 
         2
     }
 
     fn op_ld_mem_hl_c(cpu: &mut CPU) -> u8 {
-        let hl: u16 = (cpu.registers.h as u16) << 8 | (cpu.registers.l as u16);
+        let hl = cpu.get_hl();
         cpu.write_memory(hl, cpu.registers.c);
 
         2
     }
 
     fn op_ld_mem_hl_d(cpu: &mut CPU) -> u8 {
-        let hl: u16 = (cpu.registers.h as u16) << 8 | (cpu.registers.l as u16);
+        let hl = cpu.get_hl();
         cpu.write_memory(hl, cpu.registers.d);
 
         2
     }
 
     fn op_ld_mem_hl_e(cpu: &mut CPU) -> u8 {
-        let hl: u16 = (cpu.registers.h as u16) << 8 | (cpu.registers.l as u16);
+        let hl = cpu.get_hl();
         cpu.write_memory(hl, cpu.registers.e);
 
         2
@@ -1659,7 +1692,7 @@ impl CPU {
     }
 
     fn op_ld_mem_hl_dec_a(cpu: &mut CPU) -> u8 {
-        let hl = ((cpu.registers.h as u16) << 8) | (cpu.registers.l as u16);
+        let hl = cpu.get_hl();
         cpu.write_memory(hl, cpu.registers.a);
 
         let d_hl = hl.wrapping_sub(1);
@@ -1670,7 +1703,7 @@ impl CPU {
     }
 
     fn op_ld_mem_hl_inc_a(cpu: &mut CPU) -> u8 {
-        let hl = ((cpu.registers.h as u16) << 8) | (cpu.registers.l as u16);
+        let hl = cpu.get_hl();
         cpu.write_memory(hl, cpu.registers.a);
 
         let d_hl = hl + 1;
@@ -1681,31 +1714,30 @@ impl CPU {
     }
 
     fn op_ld_mem_hl_d8(cpu: &mut CPU) -> u8 {
-        let hl = ((cpu.registers.h as u16) << 8) | (cpu.registers.l as u16);
-        let d8 = cpu.read_memory_from_pc();
+        let hl = cpu.get_hl();
+        let d8 = cpu.read_byte_from_pc();
         cpu.write_memory(hl, d8);
 
         3
     }
 
     fn op_ld_mem_a8_a(cpu: &mut CPU) -> u8 {
-        let address: u16 = 0xFF00 | (cpu.read_memory_from_pc() as u16);
+        let address: u16 = 0xFF00 | (cpu.read_byte_from_pc() as u16);
         cpu.write_memory(address, cpu.registers.a);
 
         3
     }
 
     fn op_ld_mem_a16_a(cpu: &mut CPU) -> u8 {
-        let a16 = (cpu.read_memory_from_pc() as u16) | ((cpu.read_memory_from_pc() as u16) << 8);
+        let a16 = cpu.read_word_from_pc();
         cpu.write_memory(a16, cpu.registers.a);
 
         4
     }
 
     fn op_ld_mem_a16_sp(cpu: &mut CPU) -> u8 {
-        let a16 = (cpu.read_memory_from_pc() as u16) | ((cpu.read_memory_from_pc() as u16) << 8);
-        cpu.write_memory(a16, (cpu.registers.sp & 0xFF) as u8);
-        cpu.write_memory(a16 + 1, ((cpu.registers.sp & 0xFF00) >> 8) as u8);
+        let a16 = cpu.read_word_from_pc();
+        cpu.write_word(a16, cpu.registers.sp);
 
         5
     }
@@ -1740,7 +1772,7 @@ impl CPU {
     }
 
     fn op_and_d8(cpu: &mut CPU) -> u8 {
-        let d8 = cpu.read_memory_from_pc();
+        let d8 = cpu.read_byte_from_pc();
         and(&mut cpu.registers.a, d8, &mut cpu.registers.f) + 1
     }
 
@@ -1774,7 +1806,7 @@ impl CPU {
     }
 
     fn op_or_d8(cpu: &mut CPU) -> u8 {
-        let d8 = cpu.read_memory_from_pc();
+        let d8 = cpu.read_byte_from_pc();
         or(&mut cpu.registers.a, d8, &mut cpu.registers.f) + 1
     }
 
@@ -1813,7 +1845,7 @@ impl CPU {
     }
 
     fn op_xor_d8(cpu: &mut CPU) -> u8 {
-        let d8 = cpu.read_memory_from_pc();
+        let d8 = cpu.read_byte_from_pc();
         xor(d8, &mut cpu.registers.a, &mut cpu.registers.f) + 1
     }
 
@@ -1841,14 +1873,14 @@ impl CPU {
     }
 
     fn op_jp_a16(cpu: &mut CPU) -> u8 {
-        let address: u16 = cpu.read_memory_from_pc() as u16 | ((cpu.read_memory_from_pc() as u16) << 8);
+        let address: u16 = cpu.read_byte_from_pc() as u16 | ((cpu.read_byte_from_pc() as u16) << 8);
         cpu.registers.pc = address;
 
         4
     }
 
     fn op_jp_nz_a16(cpu: &mut CPU) -> u8 {
-        let address: u16 = cpu.read_memory_from_pc() as u16 | ((cpu.read_memory_from_pc() as u16) << 8);
+        let address: u16 = cpu.read_byte_from_pc() as u16 | ((cpu.read_byte_from_pc() as u16) << 8);
 
         if !cpu.get_flag(FLAG_Z) {
             cpu.registers.pc = address;
@@ -1861,7 +1893,7 @@ impl CPU {
     }
 
     fn op_jp_z_a16(cpu: &mut CPU) -> u8 {
-        let address: u16 = cpu.read_memory_from_pc() as u16 | ((cpu.read_memory_from_pc() as u16) << 8);
+        let address: u16 = cpu.read_byte_from_pc() as u16 | ((cpu.read_byte_from_pc() as u16) << 8);
 
         if cpu.get_flag(FLAG_Z) {
             cpu.registers.pc = address;
@@ -1874,7 +1906,7 @@ impl CPU {
     }
 
     fn op_jp_nc_a16(cpu: &mut CPU) -> u8 {
-        let address: u16 = cpu.read_memory_from_pc() as u16 | ((cpu.read_memory_from_pc() as u16) << 8);
+        let address: u16 = cpu.read_byte_from_pc() as u16 | ((cpu.read_byte_from_pc() as u16) << 8);
 
         if !cpu.get_flag(FLAG_C) {
             cpu.registers.pc = address;
@@ -1886,15 +1918,28 @@ impl CPU {
         }
     }
 
+    fn op_jp_c_a16(cpu: &mut CPU) -> u8 {
+        let address: u16 = cpu.read_byte_from_pc() as u16 | ((cpu.read_byte_from_pc() as u16) << 8);
+
+        if cpu.get_flag(FLAG_C) {
+            cpu.registers.pc = address;
+
+            4
+        }
+        else {
+            3
+        }
+    }
+
     fn op_jr_s8(cpu: &mut CPU) -> u8 {
-        let offset = cpu.read_memory_from_pc() as i8;
+        let offset = cpu.read_byte_from_pc() as i8;
         cpu.registers.pc = (cpu.registers.pc as i32 + offset as i32) as u16;
 
         3
     }
 
     fn op_jr_nz_s8(cpu: &mut CPU) -> u8 {
-        let offset = cpu.read_memory_from_pc() as i8;
+        let offset = cpu.read_byte_from_pc() as i8;
 
         if !cpu.get_flag(FLAG_Z) {
             cpu.registers.pc = (cpu.registers.pc as i32 + offset as i32) as u16;
@@ -1907,7 +1952,7 @@ impl CPU {
     }
 
     fn op_jr_z_s8(cpu: &mut CPU) -> u8 {
-        let offset = cpu.read_memory_from_pc() as i8;
+        let offset = cpu.read_byte_from_pc() as i8;
 
         if cpu.get_flag(FLAG_Z) {
             cpu.registers.pc = (cpu.registers.pc as i32 + offset as i32) as u16;
@@ -1920,7 +1965,7 @@ impl CPU {
     }
 
     fn op_jr_nc_s8(cpu: &mut CPU) -> u8 {
-        let offset = cpu.read_memory_from_pc() as i8;
+        let offset = cpu.read_byte_from_pc() as i8;
 
         if !cpu.get_flag(FLAG_C) {
             cpu.registers.pc = (cpu.registers.pc as i32 + offset as i32) as u16;
@@ -1933,7 +1978,7 @@ impl CPU {
     }
 
     fn op_jr_c_s8(cpu: &mut CPU) -> u8 {
-        let offset = cpu.read_memory_from_pc() as i8;
+        let offset = cpu.read_byte_from_pc() as i8;
 
         if cpu.get_flag(FLAG_C) {
             cpu.registers.pc = (cpu.registers.pc as i32 + offset as i32) as u16;
@@ -1953,16 +1998,16 @@ impl CPU {
         cpu.registers.sp -= 1;
         cpu.write_memory(cpu.registers.sp, (next_pc & 0x00FF) as u8);
 
-        let l = cpu.read_memory_from_pc();
-        let h = cpu.read_memory_from_pc();
+        let l = cpu.read_byte_from_pc();
+        let h = cpu.read_byte_from_pc();
         cpu.registers.pc = (h as u16) << 8 | (l as u16);
 
         6
     }
 
     fn op_call_nz_a16(cpu: &mut CPU) -> u8 {
-        let l = cpu.read_memory_from_pc();
-        let h = cpu.read_memory_from_pc();
+        let l = cpu.read_byte_from_pc();
+        let h = cpu.read_byte_from_pc();
 
         if !cpu.get_flag(FLAG_Z) {
             cpu.registers.sp -= 1;
@@ -1980,8 +2025,8 @@ impl CPU {
     }
 
     fn op_call_z_a16(cpu: &mut CPU) -> u8 {
-        let l = cpu.read_memory_from_pc();
-        let h = cpu.read_memory_from_pc();
+        let l = cpu.read_byte_from_pc();
+        let h = cpu.read_byte_from_pc();
 
         if cpu.get_flag(FLAG_Z) {
             cpu.registers.sp -= 1;
@@ -1999,8 +2044,8 @@ impl CPU {
     }
 
     fn op_call_nc_a16(cpu: &mut CPU) -> u8 {
-        let l = cpu.read_memory_from_pc();
-        let h = cpu.read_memory_from_pc();
+        let l = cpu.read_byte_from_pc();
+        let h = cpu.read_byte_from_pc();
 
         if !cpu.get_flag(FLAG_C) {
             cpu.registers.sp -= 1;
@@ -2015,6 +2060,24 @@ impl CPU {
         else {
             3
         }
+    }
+
+    fn op_call_c_a16(cpu: &mut CPU) -> u8 {
+        // let hl = cpu.read_word_from_pc();
+
+        // if cpu.get_flag(FLAG_C) {
+        //     cpu.registers.sp -= 1;
+        //     cpu.write_memory(cpu.registers.sp, ((cpu.registers.pc & 0xFF00) >> 8) as u8);
+        //     cpu.registers.sp -= 1;
+        //     cpu.write_memory(cpu.registers.sp, (cpu.registers.pc & 0x00FF) as u8);
+            
+        //     cpu.registers.pc = (h as u16) << 8 | (l as u16);
+
+        //     6
+        // }
+        // else {
+            3
+        // }
     }
 
     fn op_ret_nz(cpu: &mut CPU) -> u8 {
@@ -2185,41 +2248,53 @@ impl CPU {
     }
 
     fn op_rla(cpu: &mut CPU) -> u8 {
-        let prev_carry: u8 = if cpu.get_flag(FLAG_C) { 1 } else { 0 };
-        let will_carry = cpu.registers.a & (1 << 7) != 0;
-
+        let prev_carry: u8 = cpu.get_flag(FLAG_C) as u8;
+        
+        let carry = cpu.registers.a & (1 << 7);
         cpu.registers.a = (cpu.registers.a << 1) | prev_carry;
 
         cpu.set_flag(FLAG_Z, false);
         cpu.set_flag(FLAG_N, false);
         cpu.set_flag(FLAG_H, false);
-        cpu.set_flag(FLAG_C, will_carry);
+        cpu.set_flag(FLAG_C, carry != 0);
 
         1
     }
 
     fn op_rra(cpu: &mut CPU) -> u8 {
-        let prev_carry: u8 = if cpu.get_flag(FLAG_C) { 1 } else { 0 };
-        let will_carry = cpu.registers.a & 1 != 0;
-
+        let prev_carry: u8 = cpu.get_flag(FLAG_C) as u8;
+        
+        let carry = cpu.registers.a & 0x1;
         cpu.registers.a = (cpu.registers.a >> 1) | (prev_carry << 7);
 
         cpu.set_flag(FLAG_Z, false);
         cpu.set_flag(FLAG_N, false);
         cpu.set_flag(FLAG_H, false);
-        cpu.set_flag(FLAG_C, will_carry);
+        cpu.set_flag(FLAG_C, carry != 0);
 
         1
     }
 
     fn op_rlca(cpu: &mut CPU) -> u8 {
-        let carry = cpu.registers.a & (1 << 7) != 0;
-        cpu.registers.a <<= 1;
+        let carry = cpu.registers.a & (1 << 7);
+        cpu.registers.a = (cpu.registers.a << 1) | (carry >> 7);
     
         set_flag2(&mut cpu.registers.f, FLAG_Z, false);
         set_flag2(&mut cpu.registers.f, FLAG_N, false);
         set_flag2(&mut cpu.registers.f, FLAG_H, false);
-        set_flag2(&mut cpu.registers.f, FLAG_C, carry);
+        set_flag2(&mut cpu.registers.f, FLAG_C, carry != 0);
+    
+        1
+    }
+
+    fn op_rrca(cpu: &mut CPU) -> u8 {
+        let carry = cpu.registers.a & 0x1;
+        cpu.registers.a = (cpu.registers. a >> 1) | (carry << 7);
+    
+        set_flag2(&mut cpu.registers.f, FLAG_Z, false);
+        set_flag2(&mut cpu.registers.f, FLAG_N, false);
+        set_flag2(&mut cpu.registers.f, FLAG_H, false);
+        set_flag2(&mut cpu.registers.f, FLAG_C, carry != 0);
     
         1
     }
@@ -2763,6 +2838,342 @@ impl CPU {
         cpu.set_flag(FLAG_H, true);
 
         4
+    }
+
+    fn op_set0_a(cpu: &mut CPU) -> u8 {
+        cpu.registers.a |= 1;
+
+        2
+    }
+
+    fn op_set0_b(cpu: &mut CPU) -> u8 {
+        cpu.registers.b |= 1;
+        
+        2
+    }
+
+    fn op_set0_c(cpu: &mut CPU) -> u8 {
+        cpu.registers.c |= 1;
+        
+        2
+    }
+
+    fn op_set0_d(cpu: &mut CPU) -> u8 {
+        cpu.registers.d |= 1;
+        
+        2
+    }
+
+    fn op_set0_e(cpu: &mut CPU) -> u8 {
+        cpu.registers.e |= 1;
+        
+        2
+    }
+
+    fn op_set0_h(cpu: &mut CPU) -> u8 {
+        cpu.registers.h |= 1;
+        
+        2
+    }
+
+    fn op_set0_l(cpu: &mut CPU) -> u8 {
+        cpu.registers.l |= 1;
+        
+        2
+    }
+
+    fn op_set1_a(cpu: &mut CPU) -> u8 {
+        cpu.registers.a |= 1 << 1;
+
+        2
+    }
+
+    fn op_set1_b(cpu: &mut CPU) -> u8 {
+        cpu.registers.b |= 1 << 1;
+        
+        2
+    }
+
+    fn op_set1_c(cpu: &mut CPU) -> u8 {
+        cpu.registers.c |= 1 << 1;
+        
+        2
+    }
+
+    fn op_set1_d(cpu: &mut CPU) -> u8 {
+        cpu.registers.d |= 1 << 1;
+        
+        2
+    }
+
+    fn op_set1_e(cpu: &mut CPU) -> u8 {
+        cpu.registers.e |= 1 << 1;
+        
+        2
+    }
+
+    fn op_set1_h(cpu: &mut CPU) -> u8 {
+        cpu.registers.h |= 1 << 1;
+        
+        2
+    }
+
+    fn op_set1_l(cpu: &mut CPU) -> u8 {
+        cpu.registers.l |= 1 << 1;
+        
+        2
+    }
+
+    fn op_set2_a(cpu: &mut CPU) -> u8 {
+        cpu.registers.a |= 1 << 2;
+
+        2
+    }
+
+    fn op_set2_b(cpu: &mut CPU) -> u8 {
+        cpu.registers.b |= 1 << 2;
+        
+        2
+    }
+
+    fn op_set2_c(cpu: &mut CPU) -> u8 {
+        cpu.registers.c |= 1 << 2;
+        
+        2
+    }
+
+    fn op_set2_d(cpu: &mut CPU) -> u8 {
+        cpu.registers.d |= 1 << 2;
+        
+        2
+    }
+
+    fn op_set2_e(cpu: &mut CPU) -> u8 {
+        cpu.registers.e |= 1 << 2;
+        
+        2
+    }
+
+    fn op_set2_h(cpu: &mut CPU) -> u8 {
+        cpu.registers.h |= 1 << 2;
+        
+        2
+    }
+
+    fn op_set2_l(cpu: &mut CPU) -> u8 {
+        cpu.registers.l |= 1 << 2;
+        
+        2
+    }
+
+    fn op_set3_a(cpu: &mut CPU) -> u8 {
+        cpu.registers.a |= 1 << 3;
+
+        2
+    }
+
+    fn op_set3_b(cpu: &mut CPU) -> u8 {
+        cpu.registers.b |= 1 << 3;
+        
+        2
+    }
+
+    fn op_set3_c(cpu: &mut CPU) -> u8 {
+        cpu.registers.c |= 1 << 3;
+        
+        2
+    }
+
+    fn op_set3_d(cpu: &mut CPU) -> u8 {
+        cpu.registers.d |= 1 << 3;
+        
+        2
+    }
+
+    fn op_set3_e(cpu: &mut CPU) -> u8 {
+        cpu.registers.e |= 1 << 3;
+        
+        2
+    }
+
+    fn op_set3_h(cpu: &mut CPU) -> u8 {
+        cpu.registers.h |= 1 << 3;
+        
+        2
+    }
+
+    fn op_set3_l(cpu: &mut CPU) -> u8 {
+        cpu.registers.l |= 1 << 3;
+        
+        2
+    }
+
+    fn op_set4_a(cpu: &mut CPU) -> u8 {
+        cpu.registers.a |= 1 << 4;
+
+        2
+    }
+
+    fn op_set4_b(cpu: &mut CPU) -> u8 {
+        cpu.registers.b |= 1 << 4;
+        
+        2
+    }
+
+    fn op_set4_c(cpu: &mut CPU) -> u8 {
+        cpu.registers.c |= 1 << 4;
+        
+        2
+    }
+
+    fn op_set4_d(cpu: &mut CPU) -> u8 {
+        cpu.registers.d |= 1 << 4;
+        
+        2
+    }
+
+    fn op_set4_e(cpu: &mut CPU) -> u8 {
+        cpu.registers.e |= 1 << 4;
+        
+        2
+    }
+
+    fn op_set4_h(cpu: &mut CPU) -> u8 {
+        cpu.registers.h |= 1 << 4;
+        
+        2
+    }
+
+    fn op_set4_l(cpu: &mut CPU) -> u8 {
+        cpu.registers.l |= 1 << 4;
+        
+        2
+    }
+
+    fn op_set5_a(cpu: &mut CPU) -> u8 {
+        cpu.registers.a |= 1 << 5;
+
+        2
+    }
+
+    fn op_set5_b(cpu: &mut CPU) -> u8 {
+        cpu.registers.b |= 1 << 5;
+        
+        2
+    }
+
+    fn op_set5_c(cpu: &mut CPU) -> u8 {
+        cpu.registers.c |= 1 << 5;
+        
+        2
+    }
+
+    fn op_set5_d(cpu: &mut CPU) -> u8 {
+        cpu.registers.d |= 1 << 5;
+        
+        2
+    }
+
+    fn op_set5_e(cpu: &mut CPU) -> u8 {
+        cpu.registers.e |= 1 << 5;
+        
+        2
+    }
+
+    fn op_set5_h(cpu: &mut CPU) -> u8 {
+        cpu.registers.h |= 1 << 5;
+        
+        2
+    }
+
+    fn op_set5_l(cpu: &mut CPU) -> u8 {
+        cpu.registers.l |= 1 << 5;
+        
+        2
+    }
+
+    fn op_set6_a(cpu: &mut CPU) -> u8 {
+        cpu.registers.a |= 1 << 6;
+
+        2
+    }
+
+    fn op_set6_b(cpu: &mut CPU) -> u8 {
+        cpu.registers.b |= 1 << 6;
+        
+        2
+    }
+
+    fn op_set6_c(cpu: &mut CPU) -> u8 {
+        cpu.registers.c |= 1 << 6;
+        
+        2
+    }
+
+    fn op_set6_d(cpu: &mut CPU) -> u8 {
+        cpu.registers.d |= 1 << 6;
+        
+        2
+    }
+
+    fn op_set6_e(cpu: &mut CPU) -> u8 {
+        cpu.registers.e |= 1 << 6;
+        
+        2
+    }
+
+    fn op_set6_h(cpu: &mut CPU) -> u8 {
+        cpu.registers.h |= 1 << 6;
+        
+        2
+    }
+
+    fn op_set6_l(cpu: &mut CPU) -> u8 {
+        cpu.registers.l |= 1 << 6;
+        
+        2
+    }
+
+    fn op_set7_a(cpu: &mut CPU) -> u8 {
+        cpu.registers.a |= 1 << 7;
+
+        2
+    }
+
+    fn op_set7_b(cpu: &mut CPU) -> u8 {
+        cpu.registers.b |= 1 << 7;
+        
+        2
+    }
+
+    fn op_set7_c(cpu: &mut CPU) -> u8 {
+        cpu.registers.c |= 1 << 7;
+        
+        2
+    }
+
+    fn op_set7_d(cpu: &mut CPU) -> u8 {
+        cpu.registers.d |= 1 << 7;
+        
+        2
+    }
+
+    fn op_set7_e(cpu: &mut CPU) -> u8 {
+        cpu.registers.e |= 1 << 7;
+        
+        2
+    }
+
+    fn op_set7_h(cpu: &mut CPU) -> u8 {
+        cpu.registers.h |= 1 << 7;
+        
+        2
+    }
+
+    fn op_set7_l(cpu: &mut CPU) -> u8 {
+        cpu.registers.l |= 1 << 7;
+        
+        2
     }
 
     fn op_res0_a(cpu: &mut CPU) -> u8 {

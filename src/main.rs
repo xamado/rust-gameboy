@@ -37,8 +37,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let window = sdl.create_raw_window("Hello Pixels", WindowPosition::Centered, WIDTH, HEIGHT, 0)?;
     
     let mut pixels = {
-        // TODO: Beryllium does not expose the SDL2 `GetDrawableSize` APIs, so choosing the correct
-        // surface texture size is not possible.
         let surface_texture = SurfaceTexture::new(WIDTH, HEIGHT, &window);
         Pixels::new(WIDTH, HEIGHT, surface_texture)?
     };
