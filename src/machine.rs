@@ -40,21 +40,21 @@ impl Machine {
         }
     }
 
-    pub fn start(&mut self) {
-        // self.bootrom.borrow_mut().open("DMG_ROM.bin");
-        // self.rom.borrow_mut().open("Tetris (World) (Rev A).gb");
-        self.rom.borrow_mut().open("Super Mario Land (World).gb");
-        // self.rom.borrow_mut().open("cpu_instrs.gb");
-        // self.rom.borrow_mut().open("Dr. Mario (World).gb");
-        // self.rom.borrow_mut().open("TESTGAME.gb");
-        // self.rom.borrow_mut().open("opus5.gb");
+    pub fn start(&mut self, skip_bootrom: bool) {
+        if !skip_bootrom {
+            self.bootrom.borrow_mut().open("DMG_ROM.bin");
+        }
 
-        // self.bus.borrow_mut().map(0x0000..=0x00FF, self.bootrom.clone());
+        self.bus.borrow_mut().map(0x0000..=0x00FF, self.bootrom.clone());
         self.bus.borrow_mut().map(0x0000..=0x7FFF, self.rom.clone());
         self.bus.borrow_mut().map(0xFF00..=0xFF00, self.joystick.clone());
         self.bus.borrow_mut().map(0xFF04..=0xFF07, self.timer.clone());
         self.bus.borrow_mut().map(0xFF40..=0xFF49, self.ppu.clone());
         self.bus.borrow_mut().map(0x8000..=0xFFFF, self.ram.clone());     
+    }
+
+    pub fn load_rom(&self, file: &str) {
+        self.rom.borrow_mut().open(file);
     }
 
     pub fn update_frame(&self) {

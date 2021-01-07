@@ -3,6 +3,7 @@
 
 use beryllium::*;
 use pixels::{Pixels, SurfaceTexture};
+use clap::{Arg, App};
 
 mod cpu;
 mod rom;
@@ -33,6 +34,26 @@ struct Color {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
 
+    let cli_matches = App::new("rust-gameboy")
+        .version("0.1")
+        .author("Xavier Amado <xamado@gmail.com")
+        .about("GB emulator written in Rust")
+        .arg(Arg::with_name("rom")
+            .long("rom")
+            .help("Specify rom to load")
+            .required(true)
+            .takes_value(true)
+        )
+        .arg(Arg::with_name("no-bootrom")
+            .long("no-bootrom")
+            .help("Avoid the bootrom and just start ROM directly")
+            .takes_value(false)
+        )
+        .get_matches();
+
+    let rom_file = cli_matches.value_of("rom").unwrap();
+    let no_bootrom = cli_matches.occurrences_of("no-bootrom") > 0;
+
     let sdl = SDL::init(InitFlags::default())?;
     let window = sdl.create_raw_window("Hello Pixels", WindowPosition::Centered, WIDTH, HEIGHT, 0)?;
     
@@ -42,7 +63,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let mut machine = Machine::new();
-    machine.start();
+    machine.start(no_bootrom);
+
+    
+    machine.load_rom(rom_file);
 
     'game_loop: loop {
         match sdl.poll_events().and_then(Result::ok) {

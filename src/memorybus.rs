@@ -28,7 +28,9 @@ impl MemoryBus {
 
     pub fn write_byte(&mut self, address: u16, data: u8) {
         if address == 0xFF50 {
-            self.mappings.remove(self.mappings.iter().position(|x| (*x).0 == (0x0000..=0x00FF)).expect("needle not found"));
+            if let Some(pos) = self.mappings.iter().position(|x| (*x).0 == (0x0000..=0x00FF)) {
+                self.mappings.remove(pos);
+            }
         }
 
         for (r, i) in self.mappings.iter() {

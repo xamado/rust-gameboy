@@ -8,6 +8,7 @@ edition = "2018"
 
 [dependencies]
 beryllium = { version = "0.3.2", features = ["extern_crate_raw_window_handle"] }
-env_logger = "0.7.1"
+env_logger = "0.8.2"
 log = "0.4.8"
 pixels = "0.2.0"
+clap = "2.33.3"
