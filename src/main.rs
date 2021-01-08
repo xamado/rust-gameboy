@@ -21,8 +21,12 @@ mod serial;
 use machine::Machine;
 use joystick::JoystickButton;
 
-const WIDTH: u32 = 160;
-const HEIGHT: u32 = 144;
+const BUFFER_WIDTH: u32 = 160;
+const BUFFER_HEIGHT: u32 = 144;
+
+const WINDOW_WIDTH: u32 = BUFFER_WIDTH * 4;
+const WINDOW_HEIGHT: u32 = BUFFER_HEIGHT * 4;
+
 // const BOX_SIZE: i16 = 64;
 
 #[derive(Debug, Copy, Clone)]
@@ -56,16 +60,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let no_bootrom = cli_matches.occurrences_of("no-bootrom") > 0;
 
     let sdl = SDL::init(InitFlags::default())?;
-    let window = sdl.create_raw_window("Hello Pixels", WindowPosition::Centered, WIDTH, HEIGHT, 0)?;
+    let window = sdl.create_raw_window("Hello Pixels", WindowPosition::Centered, WINDOW_WIDTH, WINDOW_HEIGHT, 0)?;
     
     let mut pixels = {
-        let surface_texture = SurfaceTexture::new(WIDTH, HEIGHT, &window);
-        Pixels::new(WIDTH, HEIGHT, surface_texture)?
+        let surface_texture = SurfaceTexture::new(BUFFER_WIDTH, BUFFER_HEIGHT, &window);
+        Pixels::new(BUFFER_WIDTH, BUFFER_HEIGHT, surface_texture)?
     };
+
+    pixels.resize(WINDOW_WIDTH, WINDOW_HEIGHT);
 
     let mut machine = Machine::new();
     machine.start(no_bootrom);
-
     
     machine.load_rom(rom_file);
 

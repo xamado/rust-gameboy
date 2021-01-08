@@ -19,7 +19,9 @@
                     "kind": "bin"
                 }
             },
-            "args": [],
+            "args": [ "--rom", "roms/Super Mario Land (World).gb", "--no-bootrom" ],
+            // "args": [ "--rom", "roms/acceptance/intr_timing.gb", "--no-bootrom" ],
+
             "cwd": "${workspaceFolder}"
         },
         {
