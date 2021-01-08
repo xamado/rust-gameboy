@@ -86,6 +86,9 @@ impl Machine {
         let cpu_cycles = instr_cycles * 4;
 
         self.ppu.borrow_mut().step(cpu_cycles);
-        self.timer.borrow_mut().step(cpu_cycles);
+
+        for i in 0..cpu_cycles {
+            self.timer.borrow_mut().step_clock();
+        }
     }
 }
