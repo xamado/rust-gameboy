@@ -35,7 +35,7 @@ impl Timer {
             timer_overflow: false,
             timer_overflow_counter: 0,
 
-            internal_counter: 0xABCC,
+            internal_counter: 0x17CC,
             prev_and_result: 0,
         }
     }
@@ -77,7 +77,7 @@ impl Timer {
 
 impl IOMapped for Timer {
     fn read_byte(&self, address: u16) -> u8 {
-        let r = match address {
+        match address {
             // FF04 DIV
             0xFF04 => (self.internal_counter >> 8) as u8, 
 
@@ -88,14 +88,10 @@ impl IOMapped for Timer {
             0xFF06 => self.timer_modulo, 
 
             // FF07 TAC - Timer Control (r/w)
-            0xFF07 => self.timer_frequency | ((self.timer_enabled as u8) << 2),
+            0xFF07 => 0xF8 | self.timer_frequency | ((self.timer_enabled as u8) << 2),
             
             _ => panic!("Invalid Timer read")
-        };
-
-        // println!("Timer R: {:#06x},{:#04x}", address, r);
-
-        r
+        }
     }
 
     fn write_byte(&mut self, address: u16, data: u8) {
@@ -103,7 +99,6 @@ impl IOMapped for Timer {
 
         match address {
             // FF04 DIV
-            // 0xFF04 => self.divider_clocks = 0,
             0xFF04 => self.internal_counter = 0,
 
             // FF05 TIMA - Timer Counter (r/w)

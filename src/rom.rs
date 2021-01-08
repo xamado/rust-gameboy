@@ -5,7 +5,8 @@ pub struct ROM {
     memory_mode: u8,
     rom_bank: u8,
     ram_enabled: bool,
-    ram_bank: u8
+    ram_bank: u8,
+    ram: Vec<u8>
 }
 
 impl ROM {
@@ -15,7 +16,8 @@ impl ROM {
             memory_mode: 1,
             rom_bank: 1,
             ram_enabled: false,
-            ram_bank: 0
+            ram_bank: 0,
+            ram: vec!(0; 0x2000) // 8Kb
         }
     }
 
@@ -38,7 +40,7 @@ impl IOMapped for ROM {
                 let idx: usize = (address as usize) + ((bank - 1) as usize) * 0x4000;
                 self.data[idx]
             }
-            0xA000..=0xBFFF => panic!("External RAM not implemented"),
+            0xA000..=0xBFFF => self.ram[(address - 0xA000) as usize],
             _ => panic!("Invalid ROM read")
         }
         
@@ -59,8 +61,11 @@ impl IOMapped for ROM {
                 else {
                     self.ram_bank = data & 0x3;
                 }
-             } 
+            }
             0x6000..=0x7FFF => { self.memory_mode = data & 0x1 } // rom/ram mode select
+            0xA000..=0xBFFF => {
+                self.ram[(address - 0xA000) as usize] = data;
+            }
             _ => panic!("Invalid ROM write {:#06x}", address)
         }
     }

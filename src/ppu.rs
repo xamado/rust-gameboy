@@ -7,7 +7,7 @@ use crate::cpu::Interrupts;
 use crate::iomapped::IOMapped;
 use crate::bitutils::*;
 
-const MAX_SCANLINES: u8 = 153;
+const MAX_SCANLINES: u8 = 154;
 const VBLANK_LINE: u8 = 144;
 const TILE_WIDTH: u16 = 8;
 const TILE_HEIGHT: u16 = 8;
@@ -47,7 +47,7 @@ enum OBJAttributes {
 pub struct PPU {
     bus: Rc<RefCell<MemoryBus>>,
     screen: Rc<RefCell<Screen>>,
-    mode_cycles: u32,
+    line_cycles: u32,
     lcdc: u8,
     stat: u8,
     scy: u8,
@@ -60,7 +60,8 @@ pub struct PPU {
     obj_palette0: u8,
     obj_palette1: u8,
     dma_active: bool,
-    dma_source: u8
+    dma_source: u8,
+    total_vblank_cycles: u32
 }
 
 impl PPU {
@@ -68,7 +69,7 @@ impl PPU {
         Self {
             bus,
             screen,
-            mode_cycles: 0,
+            line_cycles: 0,
             lcdc: 0x91,
             stat: 0x85,
             scy: 0,
@@ -82,6 +83,7 @@ impl PPU {
             obj_palette1: 0xFF,
             dma_active: false,
             dma_source: 0,
+            total_vblank_cycles: 0,
         }
     }
 
@@ -100,13 +102,34 @@ impl PPU {
             return;
         }
 
-        self.mode_cycles += cycles as u32;
-
         let mut mode = self.stat & 0x3;
+        self.line_cycles += cycles as u32;
+        self.total_vblank_cycles += cycles as u32;
+        
         match mode {
-            0 => { // HBLANK
-                if self.mode_cycles >= 204 {
-                    self.mode_cycles -= 204;
+            // OAM access mode
+            2 => { 
+                // wait for 82 cycles, then go to mode VRAM READ MODE
+                if self.line_cycles >= 82 {
+                    mode = 3;
+                }
+            },
+
+            // VRAM read mode
+            3 => {
+                if self.line_cycles >= 252 {
+                    // draw scanline
+                    self.render_scanline();
+
+                    mode = 0;
+                    self.check_stat_interrupts();
+                }
+            },
+
+            // HBLANK
+            0 => { 
+                if self.line_cycles >= 456 {
+                    self.line_cycles -= 456;
                     
                     // update LY
                     self.ly = (self.ly + 1) % MAX_SCANLINES;
@@ -118,7 +141,7 @@ impl PPU {
                         self.bus.borrow_mut().write_byte(0xFF0F, iif);
                     }
 
-                    if self.ly == VBLANK_LINE {
+                    if self.ly == VBLANK_LINE { // ly = 144 
                         mode = 1;
 
                         // raise the VBlank interrupt
@@ -133,9 +156,10 @@ impl PPU {
                 }
             },
 
-            1 => { // VBLANK
-                if self.mode_cycles >= 456 {
-                    self.mode_cycles -= 456;
+            // VBLANK
+            1 => { 
+                if self.line_cycles >= 456 {
+                    self.line_cycles -= 456;
 
                     // update LY
                     self.ly = (self.ly + 1) % MAX_SCANLINES;
@@ -148,28 +172,10 @@ impl PPU {
                     }
 
                     if self.ly == 0 {
+                        self.total_vblank_cycles = 0;
                         mode = 2;
                         self.check_stat_interrupts();
                     }
-                }
-            },
-
-            2 => { // OAM access mode
-                if self.mode_cycles >= 80 {
-                    self.mode_cycles -= 80;
-                    mode = 3;
-                }
-            },
-
-            3 => { // VRAM read mode
-                if self.mode_cycles >= 172 {
-                    self.mode_cycles -= 172;
-                    mode = 0;
-
-                    // draw scanline
-                    self.render_scanline();
-
-                    self.check_stat_interrupts();
                 }
             },
 
@@ -180,7 +186,7 @@ impl PPU {
     }
 
     fn check_stat_interrupts(&self) {
-        let mask = (1 << (3 + (self.stat & 0x3)));
+        let mask = 1 << (3 + (self.stat & 0x3));
 
         if self.stat & mask != 0 {
             // raise the stat interrupt
@@ -357,7 +363,7 @@ impl IOMapped for PPU {
             0xFF40 => self.lcdc,
 
             // FF41 STAT - LCDC Status (R/W)
-            0xFF41 => self.stat,
+            0xFF41 => 0x80 | self.stat,
 
             // FF42 SCY - Scroll Y
             0xFF42 => self.scy, 

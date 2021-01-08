@@ -23,7 +23,13 @@ impl MemoryBus {
             }
         }
 
-        panic!("Invalid address");
+        // reading from unmapped areas has different behaviours...
+        // TODO: Improve this with actual mappings
+        match address {
+            0xFEA0..=0xFEFF => 0x00,
+            0xFF00..=0xFF7F => 0xFF,
+            _ => 0
+        }
     }
 
     pub fn write_byte(&mut self, address: u16, data: u8) {

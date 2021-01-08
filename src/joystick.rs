@@ -25,7 +25,7 @@ pub struct Joystick {
 impl Joystick {
     pub fn new(bus: Rc<RefCell<MemoryBus>>) -> Self {
         Self {
-            data: 0xEF,
+            data: 0xCF,
             state: 0xFF,
             bus
         }
@@ -59,6 +59,6 @@ impl IOMapped for Joystick {
     }
 
     fn write_byte(&mut self, _address: u16, data: u8) {
-        self.data = data & 0x30;
+        self.data = 0xC0 | (data & 0x30);
     }
 }

@@ -595,10 +595,10 @@ impl CPU {
             bus,
             instructions: instruction_table,
             registers: Registers { 
-                a: 0x01, f: 0xb0,
-                b: 0x00, c: 0x13,
-                d: 0x00, e: 0xd8,
-                h: 0x01, l: 0x4d,
+                a: 0x01, f: 0x00,
+                b: 0xFF, c: 0x13,
+                d: 0x00, e: 0xC1,
+                h: 0x84, l: 0x03,
                 sp: 0xFFFE,
                 pc: 0x0000
             },
@@ -1019,7 +1019,7 @@ impl CPU {
         set_flag2(&mut cpu.registers.f, FLAG_H, is_half_carry);
         set_flag2(&mut cpu.registers.f, FLAG_C, is_full_carry);
 
-        2
+        4
     }
 
     fn op_sub_a(cpu: &mut CPU) -> u8 {
