@@ -82,12 +82,12 @@ impl Machine {
     }
 
     fn step(&self) {
-        let instr_cycles = self.cpu.borrow_mut().step();
-        let cpu_cycles = instr_cycles * 4;
+        let cpu_cycles = self.cpu.borrow_mut().step();
+        let clocks = cpu_cycles * 4;
 
-        self.ppu.borrow_mut().step(cpu_cycles);
+        self.ppu.borrow_mut().step(clocks);
 
-        for i in 0..cpu_cycles {
+        for _ in 0..clocks {
             self.timer.borrow_mut().step_clock();
         }
     }

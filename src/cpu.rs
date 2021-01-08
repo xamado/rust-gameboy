@@ -10,6 +10,13 @@ const FLAG_N: u8 = 1 << 6;
 const FLAG_H: u8 = 1 << 5;
 const FLAG_C: u8 = 1 << 4;
 
+#[derive(PartialEq)]
+enum CPUState {
+    Normal,
+    Halt,
+    Stop
+}
+
 #[derive(Clone)]
 struct Instruction {
     dissassembly: String,
@@ -48,14 +55,13 @@ const INTERRUPT_ADDRESS : [u16; 5] = [
 ];
 
 pub struct CPU {
+    state: CPUState,
     registers: Registers,
     instructions: HashMap<u16, Instruction>,
     bus: Rc<RefCell<MemoryBus>>,
     interrupts_enabled: bool,
     interrupts_enable_request: bool,
-    debug: bool,
-    stopped: bool,
-    halt: bool
+    debug: bool
 }
 
 impl CPU {
@@ -595,14 +601,16 @@ impl CPU {
                 h: 0x01, l: 0x4d,
                 sp: 0xFFFE,
                 pc: 0x0000
-                // pc: 0
             },
+            state: CPUState::Normal,
             interrupts_enabled: false,
             interrupts_enable_request: false,
             debug: false,
-            stopped: false,
-            halt: false
         }
+    }
+
+    pub fn set_start_pc(&mut self, pc: u16) {
+        self.registers.pc = pc;
     }
 
     pub fn step(&mut self) -> u8 {
@@ -611,7 +619,7 @@ impl CPU {
 
         cycles += self.dispatch_interrupts();
 
-        if !self.halt {
+        if self.state == CPUState::Normal {
             let op : u16;
             let b1: u8 = self.read_byte_from_pc();
             if b1 != 0xCB {
@@ -661,8 +669,8 @@ impl CPU {
         let masked_interrupts = iie & iif & 0x1F;
 
         // if halted and an interrupt is triggered, exit halt even if IME=0 (4 cycles)
-        if self.halt && masked_interrupts != 0 {
-            self.halt = false;
+        if self.state == CPUState::Halt && masked_interrupts != 0 {
+            self.state = CPUState::Normal;
             cycles += 4;
         }
 
@@ -743,7 +751,7 @@ impl CPU {
         let iie = cpu.read_memory(0xFFFF);
         // TODO: P10-P13 should be LOW
         if iie == 0 {
-            cpu.stopped = true;
+            cpu.state = CPUState::Stop;
         }
 
         1
@@ -755,7 +763,7 @@ impl CPU {
         let masked_interrupts = iie & iif & 0x1f;
 
         if masked_interrupts == 0 {
-            cpu.halt = true;
+            cpu.state = CPUState::Halt;
         }
 
         1
