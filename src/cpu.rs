@@ -836,12 +836,14 @@ impl CPU {
     fn op_inc_mem_hl(cpu: &mut CPU) -> u8 {
         let hl = cpu.get_hl();
         let v = cpu.read_memory(hl);
+
+        let is_half_carry = is_half_carry(&v, &1);
         let r = v.wrapping_add(1);
         cpu.write_memory(hl, r);
 
-        set_flag2(&mut cpu.registers.f, FLAG_Z, cpu.registers.a == 0);
+        set_flag2(&mut cpu.registers.f, FLAG_Z, r == 0);
         set_flag2(&mut cpu.registers.f, FLAG_N, false);
-        set_flag2(&mut cpu.registers.f, FLAG_H, v & 0x0F == 0x0F);
+        set_flag2(&mut cpu.registers.f, FLAG_H, is_half_carry);
 
         3
     }
@@ -1010,11 +1012,12 @@ impl CPU {
     fn op_add_sp_s8(cpu: &mut CPU) -> u8 {
         let s8: i8 = cpu.read_byte_from_pc() as i8;
         
-        let is_half_carry = (( ((cpu.registers.sp & 0xFF) as i16) + ((s8 as i16) & 0xFF)) & 0x100) != 0;
-        let is_full_carry = (((cpu.registers.sp as u32 & 0xFFFF) + (s8 as u32 & 0xFFFF)) & 0x10000) != 0;
+        let is_half_carry = is_half_carry(&(cpu.registers.sp as u8), &(s8 as u8));
+        let is_full_carry = is_full_carry(&(cpu.registers.sp as u8), &(s8 as u8));
 
         cpu.registers.sp = (cpu.registers.sp as i32).wrapping_add(s8 as i32) as u16;
 
+        set_flag2(&mut cpu.registers.f, FLAG_Z, false);
         set_flag2(&mut cpu.registers.f, FLAG_N, false);
         set_flag2(&mut cpu.registers.f, FLAG_H, is_half_carry);
         set_flag2(&mut cpu.registers.f, FLAG_C, is_full_carry);
@@ -1172,6 +1175,8 @@ impl CPU {
     }
 
     fn op_scf(cpu: &mut CPU) -> u8 {
+        set_flag2(&mut cpu.registers.f, FLAG_N, false);
+        set_flag2(&mut cpu.registers.f, FLAG_H, false);
         set_flag2(&mut cpu.registers.f, FLAG_C, true);
 
         1
@@ -1179,6 +1184,9 @@ impl CPU {
 
     fn op_ccf(cpu: &mut CPU) -> u8 {
         let cy = get_flag2(&cpu.registers.f, FLAG_C);
+
+        set_flag2(&mut cpu.registers.f, FLAG_N, false);
+        set_flag2(&mut cpu.registers.f, FLAG_H, false);
         set_flag2(&mut cpu.registers.f, FLAG_C, !cy);
 
         1
@@ -1189,27 +1197,27 @@ impl CPU {
     }
 
     fn op_cp_b(cpu: &mut CPU) -> u8 {
-        cp_reg(cpu.registers.b, cpu.registers.a, &mut cpu.registers.f)
+        cp_reg(cpu.registers.a, cpu.registers.b, &mut cpu.registers.f)
     }
 
     fn op_cp_c(cpu: &mut CPU) -> u8 {
-        cp_reg(cpu.registers.c, cpu.registers.a, &mut cpu.registers.f)
+        cp_reg(cpu.registers.a, cpu.registers.c, &mut cpu.registers.f)
     }
 
     fn op_cp_d(cpu: &mut CPU) -> u8 {
-        cp_reg(cpu.registers.d, cpu.registers.a, &mut cpu.registers.f)
+        cp_reg(cpu.registers.a, cpu.registers.d, &mut cpu.registers.f)
     }
 
     fn op_cp_e(cpu: &mut CPU) -> u8 {
-        cp_reg(cpu.registers.e, cpu.registers.a, &mut cpu.registers.f)
+        cp_reg(cpu.registers.a, cpu.registers.e, &mut cpu.registers.f)
     }
 
     fn op_cp_h(cpu: &mut CPU) -> u8 {
-        cp_reg(cpu.registers.h, cpu.registers.a, &mut cpu.registers.f)
+        cp_reg(cpu.registers.a, cpu.registers.h, &mut cpu.registers.f)
     }
 
     fn op_cp_l(cpu: &mut CPU) -> u8 {
-        cp_reg(cpu.registers.l, cpu.registers.a, &mut cpu.registers.f)
+        cp_reg(cpu.registers.a, cpu.registers.l, &mut cpu.registers.f)
     }
 
     fn op_cp_d8(cpu: &mut CPU) -> u8 {
@@ -1605,9 +1613,21 @@ impl CPU {
     }
 
     fn op_ld_hl_sp_add_s8(cpu: &mut CPU) -> u8 {
-        let s8 = cpu.read_byte_from_pc() as i8;
-        let hl = (cpu.registers.sp as i32 + s8 as i32) as u16;
+        let imm8 = cpu.read_byte_from_pc() as i8;
+        
+        let v = imm8 as u8;
+        let lb = cpu.registers.sp as u8;
+
+        let is_half_carry = is_half_carry(&lb, &v);
+        let is_full_carry = is_full_carry(&lb, &v);
+
+        let hl = (cpu.registers.sp as i32).wrapping_add(imm8 as i32) as u16;
         cpu.set_hl(hl);
+
+        set_flag2(&mut cpu.registers.f, FLAG_Z, false);
+        set_flag2(&mut cpu.registers.f, FLAG_N, false);
+        set_flag2(&mut cpu.registers.f, FLAG_H, is_half_carry);
+        set_flag2(&mut cpu.registers.f, FLAG_C, is_full_carry);
 
         3
     }
@@ -3982,10 +4002,12 @@ fn rr(reg: &mut u8, flags: &mut u8) -> u8 {
 }
 
 fn rlc(reg: &mut u8, flags: &mut u8) -> u8 {
-    let carry = *reg & (1 << 7) >> 7;
+    let carry = (*reg & 0x80) >> 7;
     *reg = (*reg << 1) | carry;
 
     set_flag2(flags, FLAG_Z, *reg == 0);
+    set_flag2(flags, FLAG_N, false);
+    set_flag2(flags, FLAG_H, false);
     set_flag2(flags, FLAG_C, carry != 0);
 
     2
@@ -3996,6 +4018,8 @@ fn rrc(reg: &mut u8, flags: &mut u8) -> u8 {
     *reg = (*reg >> 1) | (carry << 7);
 
     set_flag2(flags, FLAG_Z, *reg == 0);
+    set_flag2(flags, FLAG_N, false);
+    set_flag2(flags, FLAG_H, false);
     set_flag2(flags, FLAG_C, carry != 0);
 
     2
@@ -4005,7 +4029,7 @@ fn cp_reg(a: u8, b: u8, flags: &mut u8) -> u8 {
     let half_borrow = is_half_borrow(&a, &b);
     let full_borrow = is_full_borrow(&a, &b);
 
-    let r = b.wrapping_sub(a);
+    let r = a.wrapping_sub(b);
     
     set_flag2(flags, FLAG_Z, r == 0);
     set_flag2(flags, FLAG_N, true);
@@ -4016,8 +4040,8 @@ fn cp_reg(a: u8, b: u8, flags: &mut u8) -> u8 {
 }
 
 fn add_reg(reg: &mut u8, value: u8, flags: &mut u8) -> u8 {
-    let is_half_carry = (((*reg & 0x0F) + (value & 0x0F)) & 0x10) != 0;
-    let is_full_carry = (((*reg as u16 & 0x0FF) + (value as u16 & 0x0FF)) & 0x100) != 0;
+    let is_half_carry = is_half_carry(reg, &value);
+    let is_full_carry = is_full_carry(reg, &value);
 
     *reg = (*reg).wrapping_add(value);
 
@@ -4030,8 +4054,8 @@ fn add_reg(reg: &mut u8, value: u8, flags: &mut u8) -> u8 {
 }
 
 fn add_reg16(reg: &mut u16, value: u16, flags: &mut u8) -> u8 {
-    let is_half_carry = (((*reg & 0xFF) + (value & 0xFF)) & 0x100) != 0;
-    let is_full_carry = (((*reg as u32 & 0xFFFF) + (value as u32 & 0xFFFF)) & 0x10000) != 0;
+    let is_half_carry = is_half_carry16(reg, &value);
+    let is_full_carry = is_full_carry16(reg, &value);
 
     *reg = (*reg).wrapping_add(value);
 
@@ -4045,13 +4069,16 @@ fn add_reg16(reg: &mut u16, value: u16, flags: &mut u8) -> u8 {
 fn adc_reg(reg: &mut u8, value: u8, flags: &mut u8) -> u8 {
     let cy = if get_flag2(flags, FLAG_C) { 1 } else { 0 };
 
-    let r = (*reg).wrapping_add(value).wrapping_add(cy);
-    let is_half_carry = ((*reg & 0x0F).wrapping_add(value & 0x0F).wrapping_add(cy)) > 0x0F;
-    let is_full_carry = (r as u16) > 0xFF;
+    let mut r = (*reg).wrapping_add(value);
+
+    let is_full_carry = is_full_carry(reg, &value) || is_full_carry(&r, &cy);
+    let is_half_carry = is_half_carry(reg, &value) || is_half_carry(&r, &cy);
+
+    r = r.wrapping_add(cy);
 
     *reg = r;
 
-    set_flag2(flags, FLAG_Z, r == 0);
+    set_flag2(flags, FLAG_Z, *reg == 0);
     set_flag2(flags, FLAG_N, false);
     set_flag2(flags, FLAG_H, is_half_carry);
     set_flag2(flags, FLAG_C, is_full_carry);
@@ -4062,12 +4089,18 @@ fn adc_reg(reg: &mut u8, value: u8, flags: &mut u8) -> u8 {
 fn sbc_reg(reg: &mut u8, value: u8, flags: &mut u8) -> u8 {
     let cy = if get_flag2(flags, FLAG_C) { 1 } else { 0 };
 
-    *reg = (*reg).wrapping_sub(value).wrapping_sub(cy);
+    let mut r = (*reg).wrapping_sub(value);
+
+    let is_full_borrow = is_full_borrow(reg, &value) || is_full_borrow(&r, &cy);
+    let is_half_borrow = is_half_borrow(reg, &value) || is_half_borrow(&r, &cy);
+
+    r = r.wrapping_sub(cy);
+    *reg = r;
 
     set_flag2(flags, FLAG_Z, *reg == 0);
-    set_flag2(flags, FLAG_N, false);
-    set_flag2(flags, FLAG_H, ((value.wrapping_add(cy)) & 0xF) > (*reg & 0xF)); // TODO: Revise this... 
-    set_flag2(flags, FLAG_C, *reg < (value.wrapping_add(cy)));
+    set_flag2(flags, FLAG_N, true);
+    set_flag2(flags, FLAG_H, is_half_borrow);
+    set_flag2(flags, FLAG_C, is_full_borrow);
 
     2
 }
@@ -4143,25 +4176,25 @@ fn sla_reg(reg: &mut u8, flags: &mut u8) -> u8 {
 }
 
 fn srl_reg(reg: &mut u8, flags: &mut u8) -> u8 {
-    let carry = *reg & 1 != 0;
+    let carry = *reg & 1;
     *reg >>= 1;
 
     set_flag2(flags, FLAG_Z, *reg == 0);
     set_flag2(flags, FLAG_N, false);
     set_flag2(flags, FLAG_H, false);
-    set_flag2(flags, FLAG_C, carry);
+    set_flag2(flags, FLAG_C, carry != 0);
 
     2
 }
 
 fn sra_reg(reg: &mut u8, flags: &mut u8) -> u8 {
-    let carry = *reg & (1 << 7) != 0;
+    let carry = *reg & 0x1;
     *reg = (*reg >> 1) | (*reg & 0x80); 
 
     set_flag2(flags, FLAG_Z, *reg == 0);
     set_flag2(flags, FLAG_N, false);
     set_flag2(flags, FLAG_H, false);
-    set_flag2(flags, FLAG_C, carry);
+    set_flag2(flags, FLAG_C, carry != 0);
 
     2
 }
