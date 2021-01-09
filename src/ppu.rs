@@ -197,11 +197,6 @@ impl PPU {
     }
 
     fn render_scanline(&mut self) {
-        //let bus = self.bus.borrow();
-
-        //let obj1_palette: u8 = bus.read_byte(0xFF48);
-        // let obj2_palette: u8 = bus.read_byte(0xFF49);
-
         let bg_enabled = (self.lcdc & 1) != 0;
         // let w_enabled = (reg_lcdc & (1 << 5)) != 0;
         let obj_enabled = (self.lcdc & (1 << 1)) != 0;
@@ -276,6 +271,7 @@ impl PPU {
                 let flip_x = (obj.flags & OBJAttributes::XFlip as u8) != 0;
                 let flip_y = (obj.flags & OBJAttributes::YFlip as u8) != 0;
                 let priority = (obj.flags & OBJAttributes::Priority as u8) != 0;
+                let palette = (obj.flags & OBJAttributes::Palette as u8) != 0;
 
                 let mut row = (self.ly as i16) - y;
                 if flip_y {
@@ -289,19 +285,18 @@ impl PPU {
                         continue;
                     }
 
-                    // let idx = (x as u8 + p) as usize;
+                    let colors: u8 = if palette { self.obj_palette1 } else { self.obj_palette0 };
                     let idx = (x as u8).wrapping_add(p) as usize;
-                    let color_idx = if flip_x { obj_tile_data[TILE_WIDTH as usize - 1 - p as usize] } else { obj_tile_data[p as usize] };
-                    let color = (self.obj_palette0 & (3 << (color_idx * 2))) >> (color_idx * 2);
-
-                    if color == 0 {
-                        continue;
-                    }
-
                     if priority && scanline_buffer[idx] != 0 {
                         continue;
                     }
 
+                    let color_idx = if flip_x { obj_tile_data[TILE_WIDTH as usize - 1 - p as usize] } else { obj_tile_data[p as usize] };
+                    if color_idx == 0 {
+                        continue;
+                    }
+
+                    let color = (colors & (3 << (color_idx * 2))) >> (color_idx * 2);
                     scanline_buffer[idx] = color;
                 }
 
