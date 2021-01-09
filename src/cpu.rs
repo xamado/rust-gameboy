@@ -1096,13 +1096,13 @@ impl CPU {
 
     fn op_adc_a_d8(cpu: &mut CPU) -> u8 {
         let d8 = cpu.read_byte_from_pc();
-        adc_reg(&mut cpu.registers.a, d8, &mut cpu.registers.f)
+        adc_reg(&mut cpu.registers.a, d8, &mut cpu.registers.f) + 1
     }
 
     fn op_adc_a_mem_hl(cpu: &mut CPU) -> u8 {
         let hl = ((cpu.registers.h as u16) << 8) | (cpu.registers.l as u16);
         let v = cpu.read_memory(hl);
-        adc_reg(&mut cpu.registers.a, v, &mut cpu.registers.f)
+        adc_reg(&mut cpu.registers.a, v, &mut cpu.registers.f) + 1
     }
 
     fn op_sbc_a_a(cpu: &mut CPU) -> u8 {
@@ -1136,13 +1136,13 @@ impl CPU {
 
     fn op_sbc_a_d8(cpu: &mut CPU) -> u8 {
         let d8 = cpu.read_byte_from_pc();
-        sbc_reg(&mut cpu.registers.a, d8, &mut cpu.registers.f)
+        sbc_reg(&mut cpu.registers.a, d8, &mut cpu.registers.f) + 1
     }
 
     fn op_sbc_a_mem_hl(cpu: &mut CPU) -> u8 {
         let hl = cpu.get_hl();
         let v = cpu.read_memory(hl);
-        sbc_reg(&mut cpu.registers.a, v, &mut cpu.registers.f)
+        sbc_reg(&mut cpu.registers.a, v, &mut cpu.registers.f) + 1
     }
 
     fn op_daa(cpu: &mut CPU) -> u8 {
@@ -1222,7 +1222,7 @@ impl CPU {
 
     fn op_cp_d8(cpu: &mut CPU) -> u8 {
         let d8 = cpu.read_byte_from_pc();
-        cp_reg(cpu.registers.a, d8, &mut cpu.registers.f)
+        cp_reg(cpu.registers.a, d8, &mut cpu.registers.f) + 1
     }
     
     fn op_cp_mem_hl(cpu: &mut CPU) -> u8 {
@@ -3030,7 +3030,7 @@ impl CPU {
         cpu.set_flag(FLAG_N, false);
         cpu.set_flag(FLAG_H, true);
 
-        4
+        3
     }
 
     fn op_bit1_mem_hl(cpu: &mut CPU) -> u8 {
@@ -3041,7 +3041,7 @@ impl CPU {
         cpu.set_flag(FLAG_N, false);
         cpu.set_flag(FLAG_H, true);
 
-        4
+        3
     }
 
     fn op_bit2_mem_hl(cpu: &mut CPU) -> u8 {
@@ -3052,7 +3052,7 @@ impl CPU {
         cpu.set_flag(FLAG_N, false);
         cpu.set_flag(FLAG_H, true);
 
-        4
+        3
     }
 
     fn op_bit3_mem_hl(cpu: &mut CPU) -> u8 {
@@ -3063,7 +3063,7 @@ impl CPU {
         cpu.set_flag(FLAG_N, false);
         cpu.set_flag(FLAG_H, true);
 
-        4
+        3
     }
 
     fn op_bit4_mem_hl(cpu: &mut CPU) -> u8 {
@@ -3074,7 +3074,7 @@ impl CPU {
         cpu.set_flag(FLAG_N, false);
         cpu.set_flag(FLAG_H, true);
 
-        4
+        3
     }
 
     fn op_bit5_mem_hl(cpu: &mut CPU) -> u8 {
@@ -3085,7 +3085,7 @@ impl CPU {
         cpu.set_flag(FLAG_N, false);
         cpu.set_flag(FLAG_H, true);
 
-        4
+        3
     }
 
     fn op_bit6_mem_hl(cpu: &mut CPU) -> u8 {
@@ -3096,7 +3096,7 @@ impl CPU {
         cpu.set_flag(FLAG_N, false);
         cpu.set_flag(FLAG_H, true);
 
-        4
+        3
     }
 
     fn op_bit7_mem_hl(cpu: &mut CPU) -> u8 {
@@ -3107,7 +3107,7 @@ impl CPU {
         cpu.set_flag(FLAG_N, false);
         cpu.set_flag(FLAG_H, true);
 
-        4
+        3
     }
 
     fn op_set0_a(cpu: &mut CPU) -> u8 {
@@ -4036,7 +4036,7 @@ fn cp_reg(a: u8, b: u8, flags: &mut u8) -> u8 {
     set_flag2(flags, FLAG_H, half_borrow);
     set_flag2(flags, FLAG_C, full_borrow);
 
-    2
+    1
 }
 
 fn add_reg(reg: &mut u8, value: u8, flags: &mut u8) -> u8 {
@@ -4083,7 +4083,7 @@ fn adc_reg(reg: &mut u8, value: u8, flags: &mut u8) -> u8 {
     set_flag2(flags, FLAG_H, is_half_carry);
     set_flag2(flags, FLAG_C, is_full_carry);
 
-    2
+    1
 }
 
 fn sbc_reg(reg: &mut u8, value: u8, flags: &mut u8) -> u8 {
@@ -4102,7 +4102,7 @@ fn sbc_reg(reg: &mut u8, value: u8, flags: &mut u8) -> u8 {
     set_flag2(flags, FLAG_H, is_half_borrow);
     set_flag2(flags, FLAG_C, is_full_borrow);
 
-    2
+    1
 }
 
 fn sub(accum: &mut u8, v: u8, flags: &mut u8) -> u8 {
