@@ -73,22 +73,6 @@ impl Machine {
         self.rom.borrow_mut().open(file);
     }
 
-    pub fn update_frame(&self) {
-        let mut ly = self.bus.borrow().read_byte(0xFF44);
-
-        while ly != 0 {
-            self.step();
-
-            ly = self.bus.borrow().read_byte(0xFF44);
-        }
-
-        while ly < 144 {
-            self.step();
-
-            ly = self.bus.borrow().read_byte(0xFF44);
-        }
-    }
-
     pub fn get_screen(&self) -> &Rc<RefCell<Screen>> {
         &self.screen
     }
@@ -96,8 +80,12 @@ impl Machine {
     pub fn get_joystick(&self) -> &Rc<RefCell<Joystick>> {
         &self.joystick
     }
+    
+    pub fn step(&mut self) {
+        self.tick();
+    }
 
-    fn step(&self) {
+    fn tick(&mut self) {
         let cpu_cycles = self.cpu.borrow_mut().step();
         let clocks = cpu_cycles * 4;
 

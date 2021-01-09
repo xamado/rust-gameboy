@@ -2,7 +2,9 @@
 #![forbid(unsafe_code)]
 
 use beryllium::*;
-use pixels::{Pixels, SurfaceTexture};
+use pixels::{PixelsBuilder, SurfaceTexture, wgpu};
+use std::time::{Duration, Instant};
+use std::thread::sleep;
 use clap::{Arg, App};
 
 mod cpu;
@@ -21,9 +23,9 @@ mod serial;
 use machine::Machine;
 use joystick::JoystickButton;
 
+const WINDOW_TITLE: &str = "rust-gameboy";
 const BUFFER_WIDTH: u32 = 160;
 const BUFFER_HEIGHT: u32 = 144;
-
 const WINDOW_WIDTH: u32 = BUFFER_WIDTH * 4;
 const WINDOW_HEIGHT: u32 = BUFFER_HEIGHT * 4;
 
@@ -56,23 +58,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .get_matches();
 
-    let rom_file = cli_matches.value_of("rom").unwrap();
-    let no_bootrom = cli_matches.occurrences_of("no-bootrom") > 0;
+    let opt_rom_file = cli_matches.value_of("rom").unwrap();
+    let opt_no_bootrom = cli_matches.occurrences_of("no-bootrom") > 0;
 
     let sdl = SDL::init(InitFlags::default())?;
-    let window = sdl.create_raw_window("Hello Pixels", WindowPosition::Centered, WINDOW_WIDTH, WINDOW_HEIGHT, 0)?;
+    let mut window = sdl.create_raw_window(WINDOW_TITLE, WindowPosition::Centered, WINDOW_WIDTH, WINDOW_HEIGHT, 0)?;
     
-    let mut pixels = {
-        let surface_texture = SurfaceTexture::new(BUFFER_WIDTH, BUFFER_HEIGHT, &window);
-        Pixels::new(BUFFER_WIDTH, BUFFER_HEIGHT, surface_texture)?
-    };
-
+    let surface_texture = SurfaceTexture::new(BUFFER_WIDTH, BUFFER_HEIGHT, &window);
+    let mut pixels = PixelsBuilder::new(BUFFER_WIDTH, BUFFER_HEIGHT, surface_texture)
+         .request_adapter_options(wgpu::RequestAdapterOptions {
+             power_preference: wgpu::PowerPreference::HighPerformance,
+             compatible_surface: None,
+         })
+         .enable_vsync(true)
+         .build()?;
+     
     pixels.resize(WINDOW_WIDTH, WINDOW_HEIGHT);
 
     let mut machine = Machine::new();
-    machine.start(no_bootrom);
-    
-    machine.load_rom(rom_file);
+    machine.start(opt_no_bootrom);
+    machine.load_rom(opt_rom_file);
+
+    let mut instant = Instant::now();
+    let frame_time: f32 = 1.0 / 60.0;
 
     'game_loop: loop {
         match sdl.poll_events().and_then(Result::ok) {
@@ -156,30 +164,47 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             _ => (),
         }
 
-        machine.update_frame();
+        machine.step();
 
-        let screen = machine.get_screen().borrow();
-        let fb = screen.get_framebuffer();
+        let mut screen = machine.get_screen().borrow_mut();
+        if screen.is_vblank() {
+            let fb = screen.get_framebuffer();
 
-        let colors: [Color; 4] = [
-            Color { r: 255, g: 255, b: 255 },
-            Color { r: 126, g: 126, b: 126 },
-            Color { r: 63, g: 63, b: 63 },
-            Color { r: 0, g: 0, b: 0 }
-        ];
+            let colors: [Color; 4] = [
+                Color { r: 255, g: 255, b: 255 },
+                Color { r: 126, g: 126, b: 126 },
+                Color { r: 63, g: 63, b: 63 },
+                Color { r: 0, g: 0, b: 0 }
+            ];
+    
+            let frame = pixels.get_frame();
+            for (i, pixel) in frame.chunks_exact_mut(4).enumerate() {
+                let fb_idx = fb[i] as usize;
+                let c = colors[fb_idx];
+                pixel[0] = c.r;
+                pixel[1] = c.g;
+                pixel[2] = c.b;
+                pixel[3] = 255;
+            }
 
-        let frame = pixels.get_frame();
-        for (i, pixel) in frame.chunks_exact_mut(4).enumerate() {
-            let fb_idx = fb[i] as usize;
-            let c = colors[fb_idx];
-            pixel[0] = c.r;
-            pixel[1] = c.g;
-            pixel[2] = c.b;
-            pixel[3] = 255;
+            screen.set_vblank(false);
+            
+            // Draw the current frame
+            pixels.render()?;
+
+            // Sync to 60hz
+            let elapsed = instant.elapsed().as_secs_f32();
+            if elapsed < frame_time {
+                sleep(Duration::from_secs_f32(frame_time - elapsed));
+            }
+
+            instant = Instant::now();
+
+            // Update window title
+            let window_title = format!("{} ({}ms)", WINDOW_TITLE, (elapsed * 1000.0) as u32);
+            window.set_title(&window_title);            
         }
 
-        // Draw the current frame
-        pixels.render()?;
     }
 
     Ok(())

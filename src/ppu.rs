@@ -172,6 +172,7 @@ impl PPU {
                     }
 
                     if self.ly == 0 {
+                        self.screen.borrow_mut().set_vblank(true);
                         self.total_vblank_cycles = 0;
                         mode = 2;
                         self.check_stat_interrupts();

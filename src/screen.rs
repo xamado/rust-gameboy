@@ -1,11 +1,13 @@
 pub struct Screen {
-    framebuffer: [u8; 160 * 144]
+    framebuffer: [u8; 160 * 144],
+    vblank: bool
 }
 
 impl Screen {
     pub fn new() -> Self {
         Self {
-            framebuffer: [0; 160 * 144]
+            framebuffer: [0; 160 * 144],
+            vblank: false
         }
     }
 
@@ -20,5 +22,13 @@ impl Screen {
         self.framebuffer[start..end].copy_from_slice(data);
 
         // println!("set line {} {} {}", line, start, end);
+    }
+
+    pub fn is_vblank(&self) -> bool {
+        self.vblank
+    }
+
+    pub fn set_vblank(&mut self, v: bool) {
+        self.vblank = v;
     }
 }
