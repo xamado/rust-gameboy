@@ -29,6 +29,22 @@ enum LCDCBits {
     BGWindowDisplayPriority = 1
 }
 
+enum STATBits {
+    LYCCheckEnable = 1 << 6,
+    Mode2OAMCheckEnable = 1 << 5,
+    Mode1VBlankCheckEnable = 1 << 4,
+    Mode0HBlankCheckEnable = 1 << 3,
+    LYCComparisonSignal = 1 << 2    
+}
+
+#[derive(Copy, Clone)]
+enum PPUMode {
+    HBlank = 0,
+    VBlank = 1,
+    ReadOAM = 2,
+    ReadVRAM = 3,
+}
+
 #[allow(unused)]
 struct OAMEntry {
     y: u8,
@@ -47,6 +63,7 @@ enum OBJAttributes {
 pub struct PPU {
     bus: Rc<RefCell<MemoryBus>>,
     screen: Rc<RefCell<Screen>>,
+    mode: PPUMode,
     line_cycles: u32,
     lcdc: u8,
     stat: u8,
@@ -69,6 +86,7 @@ impl PPU {
         Self {
             bus,
             screen,
+            mode: PPUMode::ReadOAM,
             line_cycles: 0,
             lcdc: 0x91,
             stat: 0x85,
@@ -99,149 +117,142 @@ impl PPU {
 
         // If LCD is not ENABLED do nothing
         if !get_flag2(&self.lcdc, 1 << 7) {
+            // self.ly = 0;
             return;
         }
 
-        let mut mode = self.stat & 0x3;
         self.line_cycles += cycles as u32;
         self.total_vblank_cycles += cycles as u32;
         
-        match mode {
+        match self.mode {
             // OAM access mode
-            2 => { 
+            PPUMode::ReadOAM => { 
                 // wait for 82 cycles, then go to mode VRAM READ MODE
                 if self.line_cycles >= 82 {
-                    mode = 3;
+                    self.set_mode(PPUMode::ReadVRAM);
                 }
             },
 
             // VRAM read mode
-            3 => {
+            PPUMode::ReadVRAM => {
                 if self.line_cycles >= 252 {
                     // draw scanline
                     self.render_scanline();
 
-                    mode = 0;
-                    self.check_stat_interrupts();
+                    self.set_mode(PPUMode::HBlank);
                 }
             },
 
             // HBLANK
-            0 => { 
+            PPUMode::HBlank => { 
                 if self.line_cycles >= 456 {
                     self.line_cycles -= 456;
                     
                     // update LY
                     self.ly = (self.ly + 1) % MAX_SCANLINES;
-                    set_flag2(&mut self.stat, 1 << 6, self.ly == self.lyc);
 
-                    if get_flag2(&self.stat, 1 << 6) {
-                        // raise the stat interrupt
-                        let iif = self.bus.borrow().read_byte(0xFF0F) | (1 << Interrupts::LCDStat as u8);
-                        self.bus.borrow_mut().write_byte(0xFF0F, iif);
-                    }
+                    // check if LY = LYC if enabled (bit 6)
+                    self.check_lyc_compare();
 
                     if self.ly == VBLANK_LINE { // ly = 144 
-                        mode = 1;
-
-                        // raise the VBlank interrupt
-                        let iif = self.bus.borrow().read_byte(0xFF0F) | (1 << Interrupts::VBlank as u8);
-                        self.bus.borrow_mut().write_byte(0xFF0F, iif);
+                        self.set_mode(PPUMode::VBlank);
                     }
                     else {
-                        mode = 2;
+                        self.set_mode(PPUMode::ReadOAM);
                     }
-
-                    self.check_stat_interrupts();
                 }
             },
 
             // VBLANK
-            1 => { 
+            PPUMode::VBlank => { 
                 if self.line_cycles >= 456 {
                     self.line_cycles -= 456;
 
                     // update LY
                     self.ly = (self.ly + 1) % MAX_SCANLINES;
-                    set_flag2(&mut self.stat, 1 << 6, self.ly == self.lyc);
-
-                    if get_flag2(&self.stat, 1 << 6) {
-                        // raise the stat interrupt
-                        let iif = self.bus.borrow().read_byte(0xFF0F) | (1 << Interrupts::LCDStat as u8);
-                        self.bus.borrow_mut().write_byte(0xFF0F, iif);
-                    }
+                    
+                    // compare LY=LYC
+                    self.check_lyc_compare();
 
                     if self.ly == 0 {
                         self.screen.borrow_mut().set_vblank(true);
+
                         self.total_vblank_cycles = 0;
-                        mode = 2;
-                        self.check_stat_interrupts();
+                        self.set_mode(PPUMode::ReadOAM);
                     }
+                }
+            }
+        }
+    }
+
+    fn set_mode(&mut self, mode: PPUMode) {
+        self.mode = mode;
+        self.stat = self.stat & 0x7C | (self.mode as u8);
+
+        let mut iif = self.bus.borrow().read_byte(0xFF0F);
+
+        match self.mode {
+            PPUMode::HBlank => {
+                if self.stat & (STATBits::Mode0HBlankCheckEnable as u8) != 0 {
+                    iif |= 1 << Interrupts::LCDStat as u8;
                 }
             },
 
-            _ => panic!("PPU Invalid mode")
-        }
+            PPUMode::VBlank => {
+                // raise the VBlank interrupt
+                iif |= 1 << Interrupts::VBlank as u8;
 
-        self.stat = self.stat & 0x7C | mode;
+                if self.stat & (STATBits::Mode1VBlankCheckEnable as u8) != 0 {
+                    iif |= 1 << Interrupts::LCDStat as u8;
+                }
+
+                // vbl stat also triggers with oam check
+                if self.stat & (STATBits::Mode2OAMCheckEnable as u8) != 0 {
+                    iif |= 1 << Interrupts::LCDStat as u8;
+                }
+            },
+
+            PPUMode::ReadOAM => {
+                if self.stat & (STATBits::Mode2OAMCheckEnable as u8) != 0 {
+                    iif |= 1 << Interrupts::LCDStat as u8;
+                }
+            }
+
+            PPUMode::ReadVRAM => {
+
+            }
+        }
+        
+        self.bus.borrow_mut().write_byte(0xFF0F, iif);
     }
 
-    fn check_stat_interrupts(&self) {
-        let mask = 1 << (3 + (self.stat & 0x3));
+    fn check_lyc_compare(&mut self) {
+        if get_flag2(&self.stat, STATBits::LYCCheckEnable as u8) {
+            // update bit 2 with the comparison result
+            let ly_eq_lyc = self.ly == self.lyc;
+            set_flag2(&mut self.stat, STATBits::LYCComparisonSignal as u8, ly_eq_lyc);
 
-        if self.stat & mask != 0 {
-            // raise the stat interrupt
-            let iif = self.bus.borrow().read_byte(0xFF0F) | (1 << Interrupts::LCDStat as u8);
-            self.bus.borrow_mut().write_byte(0xFF0F, iif);
+            if ly_eq_lyc {
+                // raise the stat interrupt
+                let iif = self.bus.borrow().read_byte(0xFF0F) | (1 << Interrupts::LCDStat as u8);
+                self.bus.borrow_mut().write_byte(0xFF0F, iif);
+            }
         }
     }
 
     fn render_scanline(&mut self) {
-        let bg_enabled = (self.lcdc & 1) != 0;
-        // let w_enabled = (reg_lcdc & (1 << 5)) != 0;
-        let obj_enabled = (self.lcdc & (1 << 1)) != 0;
-        
-        let display_select = self.lcdc & (LCDCBits::BackgroundTilemapDisplaySelect as u8);
-        let bg_tile_map_address: u16 = if (display_select) != 0 { 0x9C00 } else { 0x9800 };
-
-        let scx: u16 = self.scx as u16;
-        let scy: u16 = self.scy as u16;
-
-        let start_tile_row: u16 = (scy + self.ly as u16) / TILE_HEIGHT;
-        let start_tile_col: u16 = scx / TILE_WIDTH;
-        let end_tile_col: u16 = start_tile_col + 21;
-
-        let pixel_row = (scy + self.ly as u16) % TILE_HEIGHT;
+        let bg_enabled = (self.lcdc & (LCDCBits::BGWindowDisplayPriority as u8)) != 0;
+        let w_enabled = (self.lcdc & (LCDCBits::WindowEnable as u8)) != 0;
+        let obj_enabled = (self.lcdc & (LCDCBits::OBJDisplayEnable as u8)) != 0;
 
         let mut scanline_buffer: [u8; 160] = [0; 160];
-        let mut pixel_idx = 0;
 
         if bg_enabled {
-            let addressing_mode = self.lcdc & LCDCBits::TileDataSelect as u8;
-            let tile_data_base_address: u16 = if addressing_mode != 0 { 0x8000 } else { 0x8800 };
+            self.draw_background(&mut scanline_buffer);
+        }
 
-            for x in start_tile_col..end_tile_col {
-                // read tile number from tile map
-                let tile_address = bg_tile_map_address + (((TILES_PER_ROW * (start_tile_row as u16 % TILES_PER_ROW)) + (x as u16 % TILES_PER_COL)) as u16);
-                let tile_number: u8 = self.bus.borrow().read_byte(tile_address);
-
-                // read tile data
-                let tile_index: u8 = if addressing_mode != 0 { tile_number } else { ((tile_number as i16) + 128) as u8 };
-                let tile_row_data = self.read_tile_data(tile_data_base_address, tile_index, pixel_row as u8);
-
-                let mut pixel_col = x * TILE_WIDTH;
-
-                for i in 0..TILE_WIDTH {
-                    if pixel_col >= scx && pixel_col <= scx + 160 && pixel_idx < 160 {
-                        let color_idx = tile_row_data[i as usize] & 0x03;
-                        let color = (self.bg_palette & (3 << (color_idx * 2))) >> (color_idx * 2);
-                        scanline_buffer[pixel_idx] = color;
-                        pixel_idx += 1;
-                    }
-                    
-                    pixel_col += 1;
-                }
-            }
+        if w_enabled {
+            self.draw_window(&mut scanline_buffer);
         }
 
         if obj_enabled {
@@ -306,6 +317,90 @@ impl PPU {
 
         self.screen.borrow_mut().set_scanline(self.ly as u8, &scanline_buffer);
     }
+    
+    fn draw_background(&self, scanline_buffer: &mut [u8; 160]) {
+        let scx: u16 = self.scx as u16;
+        let scy: u16 = self.scy as u16;
+
+        let start_tile_row: u16 = (scy + self.ly as u16) / TILE_HEIGHT;
+        let start_tile_col: u16 = scx / TILE_WIDTH;
+        let end_tile_col: u16 = start_tile_col + 21;
+        let pixel_row = (scy + self.ly as u16) % TILE_HEIGHT;
+        
+        let display_select = self.lcdc & (LCDCBits::BackgroundTilemapDisplaySelect as u8);
+        let bg_tile_map_address: u16 = if (display_select) != 0 { 0x9C00 } else { 0x9800 };
+
+        let addressing_mode = self.lcdc & LCDCBits::TileDataSelect as u8;
+        let tile_data_base_address: u16 = if addressing_mode != 0 { 0x8000 } else { 0x8800 };
+
+        let mut pixel_idx = 0;
+
+        for x in start_tile_col..end_tile_col {
+            // read tile number from tile map
+            let tile_address = bg_tile_map_address + (((TILES_PER_ROW * (start_tile_row as u16 % TILES_PER_ROW)) + (x as u16 % TILES_PER_COL)) as u16);
+            let tile_number: u8 = self.bus.borrow().read_byte(tile_address);
+
+            // read tile data
+            let tile_index: u8 = if addressing_mode != 0 { tile_number } else { ((tile_number as i16) + 128) as u8 };
+            let tile_row_data = self.read_tile_data(tile_data_base_address, tile_index, pixel_row as u8);
+
+            let mut pixel_col = x * TILE_WIDTH;
+
+            for i in 0..TILE_WIDTH {
+                if pixel_col >= scx && pixel_col <= scx + 160 && pixel_idx < 160 {
+                    let color_idx = tile_row_data[i as usize] & 0x03;
+                    let color = (self.bg_palette & (3 << (color_idx * 2))) >> (color_idx * 2);
+                    scanline_buffer[pixel_idx] = color;
+                    pixel_idx += 1;
+                }
+                
+                pixel_col += 1;
+            }
+        }
+    }
+
+    fn draw_window(&self, scanline_buffer: &mut [u8; 160]) {
+        let window_select = self.lcdc & (LCDCBits::WindowTilemapDisplaySelect as u8);
+        let window_tile_map_address: u16 = if (window_select) != 0 { 0x9C00 } else { 0x9800 };
+
+        let addressing_mode = self.lcdc & LCDCBits::TileDataSelect as u8;
+        let tile_data_base_address: u16 = if addressing_mode != 0 { 0x8000 } else { 0x8800 };
+
+        let relative_line = (self.ly as i16) - (self.wpy as i16);
+        if relative_line >= 0 {
+            let start_tile_row: u16 = (relative_line as u16) / TILE_HEIGHT;
+            let pixel_row = (relative_line as u16) % TILE_HEIGHT;
+            // let mut pixel_idx = self.wpx as usize;
+        
+            for x in 0..=20 {
+                // read tile number from tile map
+                let tile_address = window_tile_map_address + (((TILES_PER_ROW * (start_tile_row as u16 % TILES_PER_ROW)) + (x as u16 % TILES_PER_COL)) as u16);
+                let tile_number: u8 = self.bus.borrow().read_byte(tile_address);
+
+                // read tile data
+                let tile_index: u8 = if addressing_mode != 0 { tile_number } else { ((tile_number as i16) + 128) as u8 };
+                let tile_row_data = self.read_tile_data(tile_data_base_address, tile_index, pixel_row as u8);
+
+                let mut pixel_col = ((self.wpx - 7) as u16) + (x * TILE_WIDTH);
+
+                for i in 0..TILE_WIDTH {
+                    // break as soon as we reach the end of the buffer
+                    if pixel_col >= 160 {
+                        break;
+                    }
+
+                    let color_idx = tile_row_data[i as usize] & 0x03;
+                    let color = (self.bg_palette & (3 << (color_idx * 2))) >> (color_idx * 2);
+                    scanline_buffer[pixel_col as usize] = color;
+                    pixel_col += 1;
+                }
+
+                if pixel_col >= 160 {
+                    break;
+                }
+            }
+        }
+    }
 
     fn read_tile_data(&self, base_address: u16, tile_number: u8, row: u8) -> [u8; 8] {
         let bus = self.bus.borrow();
@@ -340,15 +435,26 @@ impl PPU {
     fn do_dma_transfer(&self, data: u8) {
         let addr: u16 = (data as u16) << 8;
         let mut data: [u8; 0xA0] = [0; 0xA0];
-        for i in 0..0xA0 {
+
+        // for i in 0..0xA0 {
+        //     let bus = self.bus.borrow();
+        //     data[i] = bus.read_byte(addr + (i as u16));
+        // }
+        
+        for (i, datum) in data.iter_mut().enumerate() {
             let bus = self.bus.borrow();
-            data[i] = bus.read_byte(addr + (i as u16));
+            *datum = bus.read_byte(addr + (i as u16));
         }
 
-        for i in 0..0xA0 {
+        for (i, datum) in data.iter().enumerate() {
             let mut bus = self.bus.borrow_mut();
-            bus.write_byte(0xFE00 + (i as u16), data[i]);
+            bus.write_byte(0xFE00 + (i as u16), *datum);
         }
+
+        // for i in 0..0xA0 {
+        //     let mut bus = self.bus.borrow_mut();
+        //     bus.write_byte(0xFE00 + (i as u16), data[i]);
+        // }
     }
 }
 
@@ -368,7 +474,14 @@ impl IOMapped for PPU {
             0xFF43 => self.scx,
 
             // FF44 - LY - LCDC Y-Coordinate (R)
-            0xFF44 => self.ly,
+            0xFF44 => {
+                if !get_flag2(&self.lcdc, 1 << 7) {
+                    0
+                }
+                else {
+                    self.ly
+                }
+            }
 
             // FF45 LYC - LY Compare (R/W)
             0xFF45 => self.lyc,
@@ -398,7 +511,14 @@ impl IOMapped for PPU {
     fn write_byte(&mut self, address: u16, data: u8) {
         match address {
             // FF40 LCDC - LCD Control (R/W)
-            0xFF40 => self.lcdc = data,
+            0xFF40 => {
+                self.lcdc = data;
+
+                // TODO: This crashes super mario land... but it should be reset..
+                // if !get_flag2(&self.lcdc, LCDCBits::LCDEnable as u8) {
+                //     self.ly = 0;
+                // }
+            }
 
             // FF41 STAT - LCDC Status (R/W)
             0xFF41 => self.stat = data & !0x3 | self.stat & 0x3,
@@ -410,10 +530,17 @@ impl IOMapped for PPU {
             0xFF43 => self.scx = data,
 
             // FF44 - LY - LCDC Y-Coordinate (R)
-            0xFF44 => {},
+            0xFF44 => {
+                // if LCD is disabled, then we reset LY
+                if !get_flag2(&self.lcdc, 1 << 7) {
+                    self.ly = 0;
+                }
+            },
 
             // FF45 LYC - LY Compare (R/W)
-            0xFF45 => self.lyc = data,
+            0xFF45 => {
+                self.lyc = data;
+            }
 
             // FF46 - DMA - DMA Transfer and Start Address (W)
             0xFF46 => {
