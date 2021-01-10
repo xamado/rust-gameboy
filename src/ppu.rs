@@ -116,7 +116,7 @@ impl PPU {
         }
 
         // If LCD is not ENABLED do nothing
-        if !get_flag2(&self.lcdc, 1 << 7) {
+        if !get_flag2(&self.lcdc, LCDCBits::LCDEnable as u8) {
             // self.ly = 0;
             return;
         }
@@ -465,7 +465,15 @@ impl IOMapped for PPU {
             0xFF40 => self.lcdc,
 
             // FF41 STAT - LCDC Status (R/W)
-            0xFF41 => 0x80 | self.stat,
+            0xFF41 => {
+                if !get_flag2(&self.lcdc, LCDCBits::LCDEnable as u8) {
+                    // disable bits 0-2 if LCD is off
+                    (0x80 | self.stat) & !0x3
+                }
+                else {
+                    0x80 | self.stat
+                }
+            },
 
             // FF42 SCY - Scroll Y
             0xFF42 => self.scy, 
