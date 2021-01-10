@@ -19,6 +19,7 @@ mod iomapped;
 mod timer;
 mod bitutils;
 mod serial;
+mod bootrom;
 
 use machine::Machine;
 use joystick::JoystickButton;

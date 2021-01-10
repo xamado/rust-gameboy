@@ -5,6 +5,7 @@ use crate::memorybus::MemoryBus;
 use crate::memory::Memory;
 use crate::cpu::CPU;
 use crate::rom::ROM;
+use crate::bootrom::BootROM;
 use crate::ppu::PPU;
 use crate::screen::Screen;
 use crate::joystick::Joystick;
@@ -15,7 +16,7 @@ pub struct Machine {
     cpu: Rc<RefCell<CPU>>,
     ppu: Rc<RefCell<PPU>>,
     ram: Rc<RefCell<Memory>>,
-    bootrom: Rc<RefCell<ROM>>,
+    bootrom: Rc<RefCell<BootROM>>,
     rom: Rc<RefCell<ROM>>,
     screen: Rc<RefCell<Screen>>,
     joystick: Rc<RefCell<Joystick>>,
@@ -30,7 +31,7 @@ impl Machine {
         let screen = Rc::new(RefCell::new(Screen::new()));
 
         Self {
-            bootrom: Rc::new(RefCell::new(ROM::new())),
+            bootrom: Rc::new(RefCell::new(BootROM::new())),
             rom: Rc::new(RefCell::new(ROM::new())),
             ram: Rc::new(RefCell::new(Memory::new())),
             bus: bus.clone(),
