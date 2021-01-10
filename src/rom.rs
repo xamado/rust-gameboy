@@ -25,7 +25,7 @@ impl IOMapped for MBC0 {
     }
 
     fn write_byte(&mut self, address: u16, _data: u8) {
-        panic!("Invalid ROM write {:#06x}", address)
+        // panic!("Invalid ROM write {:#06x}", address)
     }
 }
 
@@ -290,7 +290,7 @@ impl ROM {
             _ => panic!("Unsupported Cart type: {:#04x}", cart_type)
         };
         
-        //println!("Loaded ROM {}: {} bytes read. Type: {}. Banks: {}", filename, length, cart_type, self.num_rom_banks);
+        println!("Loaded ROM {}: {} bytes read. Type: {}.", filename, bytes.len(), cart_type);
     }
 }
 
