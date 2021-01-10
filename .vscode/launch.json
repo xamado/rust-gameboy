@@ -19,8 +19,10 @@
                     "kind": "bin"
                 }
             },
-            "args": [ "--rom", "roms/Super Mario Land (World).gb", "--no-bootrom" ],
-            // "args": [ "--rom", "roms/acceptance/intr_timing.gb", "--no-bootrom" ],
+            "args": [ "--rom", "roms/mooneye/manual-only/sprite_priority.gb", "--no-bootrom" ],
+            // "args": [ "--rom", "roms/Pokemon - Blue Version (UE) [S][!].gb", "--no-bootrom" ],
+            // "args": [ "--rom", "roms/mooneye/emulator-only/mbc1/bits_ramg.gb", "--no-bootrom" ],
+            // "args": [ "--rom", "roms/Mario's Picross (UE) [S][!].gb", "--no-bootrom", "--breakpoints", "", "--watchpoints", "" ],
 
             "cwd": "${workspaceFolder}"
         },

@@ -1,4 +1,5 @@
 use std::rc::Rc;
+use std::cmp::Ordering;
 use core::cell::RefCell;
 
 use crate::memorybus::MemoryBus;
@@ -45,7 +46,7 @@ enum PPUMode {
     ReadVRAM = 3,
 }
 
-#[allow(unused)]
+#[derive(Copy, Clone)]
 struct OAMEntry {
     y: u8,
     x: u8,
@@ -240,6 +241,41 @@ impl PPU {
         }
     }
 
+    fn pick_visible_objects(&self) -> Vec<(u8, OAMEntry)> {
+        let mode_8x16 = (self.lcdc & (LCDCBits::OBJSize as u8)) != 0;
+        let height = if mode_8x16 { 16 } else { 8 };
+
+        let mut objs: Vec<(u8, OAMEntry)> = vec!();
+
+        for i in 0..40 {
+            let obj = self.read_oam_entry(i);
+
+            let x = obj.x.wrapping_sub(8);
+            let y = obj.y.wrapping_sub(16);
+
+            if x >= 168 || y >= 160 {
+                continue;
+            }
+
+            if self.ly < y || self.ly >= y + height {
+                continue;
+            }
+
+            objs.push((i, obj));
+        }
+
+        let mut visible_sprites: Vec<(u8, OAMEntry)> = objs.iter().take(10).cloned().collect();
+
+        visible_sprites.sort_by(|&(idxa, a), &(idxb, b)| {
+            match a.x.cmp(&b.x) {
+                Ordering::Equal => idxb.cmp(&idxa).reverse(),
+                other => other.reverse()
+            }
+        });
+
+        visible_sprites
+    }
+
     fn render_scanline(&mut self) {
         let bg_enabled = (self.lcdc & (LCDCBits::BGWindowDisplayPriority as u8)) != 0;
         let w_enabled = (self.lcdc & (LCDCBits::WindowEnable as u8)) != 0;
@@ -256,35 +292,21 @@ impl PPU {
         }
 
         if obj_enabled {
+            let mode_8x16 = (self.lcdc & (LCDCBits::OBJSize as u8)) != 0;
+            let height = if mode_8x16 { 16 } else { 8 };
             let tile_data_base_address: u16 = 0x8000;
 
-            let mode_8x16 = (self.lcdc & (1 << 2)) != 0;
-            let mut obj_count: u8 = 0;
+            let objs = self.pick_visible_objects();
 
-            for i in 0..40 {
-                if obj_count > 10 {
-                    break;
-                }
-
-                let obj = self.read_oam_entry(i);
-                if obj.x == 0 || obj.x >= 168 || obj.y == 0 || obj.y >= 160 {
-                    continue;
-                }
-
-                let x: i16 = obj.x as i16 - 8;
-                let y: i16 = obj.y as i16 - 16;
-                let height = if mode_8x16 { 16 } else { 8 };
-
-                if (self.ly as i16) < y || (self.ly as i16) >= y + (height as i16) {
-                    continue;
-                }
-                
+            for (_idx, obj) in objs {
                 let flip_x = (obj.flags & OBJAttributes::XFlip as u8) != 0;
                 let flip_y = (obj.flags & OBJAttributes::YFlip as u8) != 0;
                 let priority = (obj.flags & OBJAttributes::Priority as u8) != 0;
                 let palette = (obj.flags & OBJAttributes::Palette as u8) != 0;
+                let x = obj.x.wrapping_sub(8);
+                let y = obj.y.wrapping_sub(16);
 
-                let mut row = (self.ly as i16) - y;
+                let mut row = self.ly - y;
                 if flip_y {
                     row = height - row - 1;
                 }
@@ -292,12 +314,12 @@ impl PPU {
                 let obj_tile_data = self.read_tile_data(tile_data_base_address, obj.tile, row as u8);
 
                 for p in 0..8 {
-                    if (x + (p as i16)) < 0 || (x + (p as i16)) >= 160 {
+                    if x + p >= 160 {
                         continue;
                     }
 
                     let colors: u8 = if palette { self.obj_palette1 } else { self.obj_palette0 };
-                    let idx = (x as u8).wrapping_add(p) as usize;
+                    let idx = x.wrapping_add(p) as usize;
                     if priority && scanline_buffer[idx] != 0 {
                         continue;
                     }
@@ -310,8 +332,6 @@ impl PPU {
                     let color = (colors & (3 << (color_idx * 2))) >> (color_idx * 2);
                     scanline_buffer[idx] = color;
                 }
-
-                obj_count += 1;
             }
         }
 

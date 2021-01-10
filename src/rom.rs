@@ -24,7 +24,7 @@ impl IOMapped for MBC0 {
         
     }
 
-    fn write_byte(&mut self, address: u16, _data: u8) {
+    fn write_byte(&mut self, _address: u16, _data: u8) {
         // panic!("Invalid ROM write {:#06x}", address)
     }
 }
@@ -251,10 +251,10 @@ pub struct ROM {
     mbc: Option<Box<dyn IOMapped>>
 }
 
-pub struct CartridgeHeader {
-    title: String,
-    manufacturer: [u8; 4],
-}
+// pub struct CartridgeHeader {
+//     title: String,
+//     manufacturer: [u8; 4],
+// }
 
 impl Default for ROM {
     fn default() -> Self {
