@@ -11,6 +11,7 @@ use crate::screen::Screen;
 use crate::joystick::Joystick;
 use crate::timer::Timer;
 use crate::serial::Serial;
+use crate::debugger::Debugger;
 
 pub struct Machine {
     cpu: Rc<RefCell<CPU>>,
@@ -22,7 +23,8 @@ pub struct Machine {
     joystick: Rc<RefCell<Joystick>>,
     bus: Rc<RefCell<MemoryBus>>,
     timer: Rc<RefCell<Timer>>,
-    serial: Rc<RefCell<Serial>>
+    serial: Rc<RefCell<Serial>>,
+    debugger: Option<Box<Debugger>>
 }
 
 impl Machine {
@@ -40,7 +42,8 @@ impl Machine {
             cpu: Rc::new(RefCell::new(CPU::new(Rc::clone(&bus)))),
             ppu: Rc::new(RefCell::new(PPU::new(Rc::clone(&bus), screen))),
             timer: Rc::new(RefCell::new(Timer::new(Rc::clone(&bus)))),
-            serial: Rc::new(RefCell::new(Serial::new()))
+            serial: Rc::new(RefCell::new(Serial::new())),
+            debugger: None,
         }
     }
 
@@ -83,7 +86,17 @@ impl Machine {
     }
     
     pub fn step(&mut self) {
+        if let Some(debugger) = &mut self.debugger {
+            if debugger.is_stopped() {
+                return;
+            }
+        }
+
         self.tick();
+
+        if let Some(debugger) = &mut self.debugger {
+            debugger.process(self.cpu.borrow(), self.bus.borrow());
+        }
     }
 
     fn tick(&mut self) {
@@ -94,6 +107,29 @@ impl Machine {
 
         for _ in 0..clocks {
             self.timer.borrow_mut().step_clock();
+        }
+    }
+
+    pub fn attach_debugger(&mut self, debugger: Debugger) {
+        self.debugger = Some(Box::new(debugger));
+    }
+
+    pub fn debugger_continue(&mut self) {
+        if let Some(debugger) = &mut self.debugger {
+            if debugger.is_stopped() {
+                debugger.resume();
+            }
+            else {
+                debugger.stop(self.cpu.borrow());
+            }
+        }
+    }
+
+    pub fn debugger_step(&mut self) {
+        self.tick();
+
+        if let Some(debugger) = &self.debugger {
+            debugger.print_trace(&self.cpu.borrow());
         }
     }
 }

@@ -18,23 +18,23 @@ enum CPUState {
 }
 
 #[derive(Clone)]
-struct Instruction {
-    dissassembly: String,
+pub struct Instruction {
+    pub dissassembly: String,
     bytes: u16,
     func: fn(&mut CPU) -> u8
 }
 
-struct Registers {
-    a: u8,
-    f: u8,
-    b: u8,
-    c: u8,
-    d: u8,
-    e: u8,
-    h: u8,
-    l: u8,
-    sp: u16,
-    pc: u16
+pub struct Registers {
+    pub a: u8,
+    pub f: u8,
+    pub b: u8,
+    pub c: u8,
+    pub d: u8,
+    pub e: u8,
+    pub h: u8,
+    pub l: u8,
+    pub sp: u16,
+    pub pc: u16
 }
 
 #[derive(Copy, Clone)]
@@ -60,8 +60,7 @@ pub struct CPU {
     instructions: HashMap<u16, Instruction>,
     bus: Rc<RefCell<MemoryBus>>,
     interrupts_enabled: bool,
-    interrupts_enable_request: bool,
-    debug: bool
+    interrupts_enable_request: bool
 }
 
 impl CPU {
@@ -604,13 +603,30 @@ impl CPU {
             },
             state: CPUState::Normal,
             interrupts_enabled: false,
-            interrupts_enable_request: false,
-            debug: false,
+            interrupts_enable_request: false
         }
     }
 
     pub fn set_start_pc(&mut self, pc: u16) {
         self.registers.pc = pc;
+    }
+
+    pub fn get_registers_state(&self) -> &Registers {
+        &self.registers
+    }
+
+    pub fn get_next_instruction(&self) -> &Instruction {
+        let op : u16;
+        let b1: u8 = self.read_memory(self.registers.pc);
+        if b1 != 0xCB {
+            op = b1 as u16;
+        }
+        else {
+            let b2: u8 = self.read_memory(self.registers.pc + 1);
+            op = (b1 as u16) << 8 | (b2 as u16);
+        }
+
+        &(self.instructions[&op])
     }
 
     pub fn step(&mut self) -> u8 {
@@ -636,21 +652,7 @@ impl CPU {
 
             let inst : &Instruction = &(self.instructions[&op]);        
             let func = inst.func;
-            let dis = inst.dissassembly.clone();
 
-            //  if pc == 0x0200 {
-            // self.debug = true;
-            //  }
-
-            if self.debug {
-                let af = ((self.registers.a as u16) << 8) | (self.registers.f as u16);
-                let bc = ((self.registers.b as u16) << 8) | (self.registers.c as u16);
-                let de = ((self.registers.d as u16) << 8) | (self.registers.e as u16);
-                let hl = ((self.registers.h as u16) << 8) | (self.registers.l as u16);
-
-                println!("@{:#06X} op: {:#04X} ({}) AF: {:#06X} | BC: {:#06X} | DE: {:#06X} | HL: {:#06X}", pc, op, dis, af, bc, de, hl);
-            }
-            
             // call the instruction
             cycles += func(self);
         }

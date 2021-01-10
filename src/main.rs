@@ -19,10 +19,12 @@ mod iomapped;
 mod timer;
 mod bitutils;
 mod serial;
+mod debugger;
 mod bootrom;
 
 use machine::Machine;
 use joystick::JoystickButton;
+use debugger::Debugger;
 
 const WINDOW_TITLE: &str = "rust-gameboy";
 const BUFFER_WIDTH: u32 = 160;
@@ -57,10 +59,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .help("Avoid the bootrom and just start ROM directly")
             .takes_value(false)
         )
+        .arg(Arg::with_name("breakpoints")
+            .long("breakpoints")
+            .short("bp")
+            .help("Comma separated list of breakpoint addresses")
+            .takes_value(true)
+        )
+        .arg(Arg::with_name("watchpoints")
+            .long("watchpoints")
+            .short("wp")
+            .help("Comma separated list of memory addresses to watch")
+            .takes_value(true)
+        )
         .get_matches();
 
     let opt_rom_file = cli_matches.value_of("rom").unwrap();
     let opt_no_bootrom = cli_matches.occurrences_of("no-bootrom") > 0;
+    let opt_breakpoints = cli_matches.value_of("breakpoints").unwrap_or("");
+    let opt_watchpoints = cli_matches.value_of("watchpoints").unwrap_or("");
 
     let sdl = SDL::init(InitFlags::default())?;
     let mut window = sdl.create_raw_window(WINDOW_TITLE, WindowPosition::Centered, WINDOW_WIDTH, WINDOW_HEIGHT, 0)?;
@@ -76,8 +92,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
      
     pixels.resize(WINDOW_WIDTH, WINDOW_HEIGHT);
 
+    let mut debugger = Debugger::new();
+    
+    // Add breakpoints
+    if !opt_breakpoints.is_empty() {
+        let breakpoints = opt_breakpoints.split(',');
+        for bp in breakpoints {
+            let addr = u16::from_str_radix(&bp[2..6], 16)?;
+            debugger.add_breakpoint(addr);
+        }
+    }
+
+    // Add watchpoints
+    if !opt_watchpoints.is_empty() {
+        let watchpoints = opt_watchpoints.split(',');
+        for wp in watchpoints {
+            let addr = u16::from_str_radix(&wp[2..6], 16)?;
+            debugger.add_watchpoint(addr);
+        }
+    }
+    
     let mut machine = Machine::new();
     machine.start(opt_no_bootrom);
+    machine.attach_debugger(debugger);
     machine.load_rom(opt_rom_file);
 
     let mut instant = Instant::now();
@@ -154,6 +191,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ..
             })) if key == Keycode::DOWN => {
                 machine.get_joystick().borrow_mut().inject(JoystickButton::Down, value);
+            }
+
+            Some(Event::Keyboard(KeyboardEvent {
+                key: KeyInfo { keycode: key, .. },
+                is_pressed: value,
+                ..
+            })) if key == Keycode::F10 && value => {
+                machine.debugger_step();
+            }
+
+            Some(Event::Keyboard(KeyboardEvent {
+                key: KeyInfo { keycode: key, .. },
+                is_pressed: value,
+                ..
+            })) if key == Keycode::F5 && value => {
+                machine.debugger_continue();
             }
 
             // Resize the window
