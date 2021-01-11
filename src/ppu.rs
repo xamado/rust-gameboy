@@ -10,10 +10,10 @@ use crate::bitutils::*;
 
 const MAX_SCANLINES: u8 = 154;
 const VBLANK_LINE: u8 = 144;
-const TILE_WIDTH: u16 = 8;
-const TILE_HEIGHT: u16 = 8;
-const TILES_PER_ROW: u16 = 32;
-const TILES_PER_COL: u16 = 32;
+const TILE_WIDTH: u8 = 8;
+const TILE_HEIGHT: u8 = 8;
+const TILES_PER_ROW: u8 = 32;
+const TILES_PER_COL: u8 = 32;
 const TILE_SIZE: u8 = 16;
 
 const OAM_TABLE_ADDRESS: u16 = 0xFE00;
@@ -254,18 +254,14 @@ impl PPU {
         for i in 0..40 {
             let obj = self.read_oam_entry(i);
 
-            let x = obj.x.wrapping_sub(8);
+            if obj.y == 0 || obj.y > 160 {
+                continue;
+            }
+
             let y = obj.y.wrapping_sub(16);
-
-            if x >= 168 || y >= 160 {
-                continue;
+            if self.ly.wrapping_sub(y) < height {
+                objs.push((i, obj));
             }
-
-            if self.ly < y || self.ly >= y + height {
-                continue;
-            }
-
-            objs.push((i, obj));
         }
 
         let mut visible_sprites: Vec<(u8, OAMEntry)> = objs.iter().take(10).cloned().collect();
@@ -303,6 +299,10 @@ impl PPU {
             let objs = self.pick_visible_objects();
 
             for (_idx, obj) in objs {
+                if obj.x == 0 || obj.x >= 168 {
+                    continue;
+                }
+                
                 let flip_x = (obj.flags & OBJAttributes::XFlip as u8) != 0;
                 let flip_y = (obj.flags & OBJAttributes::YFlip as u8) != 0;
                 let priority = (obj.flags & OBJAttributes::Priority as u8) != 0;
@@ -310,7 +310,7 @@ impl PPU {
                 let x = obj.x.wrapping_sub(8);
                 let y = obj.y.wrapping_sub(16);
 
-                let mut row = self.ly - y;
+                let mut row = self.ly.wrapping_sub(y);
                 if flip_y {
                     row = height - row - 1;
                 }
@@ -318,7 +318,7 @@ impl PPU {
                 let obj_tile_data = self.read_tile_data(tile_data_base_address, obj.tile, row as u8);
 
                 for p in 0..8 {
-                    if x + p >= 160 {
+                    if x.wrapping_add(p) >= 160 {
                         continue;
                     }
 
@@ -343,13 +343,10 @@ impl PPU {
     }
     
     fn draw_background(&self, scanline_buffer: &mut [u8; 160]) {
-        let scx: u16 = self.scx as u16;
-        let scy: u16 = self.scy as u16;
-
-        let start_tile_row: u16 = (scy + self.ly as u16) / TILE_HEIGHT;
-        let start_tile_col: u16 = scx / TILE_WIDTH;
-        let end_tile_col: u16 = start_tile_col + 21;
-        let pixel_row = (scy + self.ly as u16) % TILE_HEIGHT;
+        let start_tile_row: u8 = ((self.scy as u16 + self.ly as u16) / (TILE_HEIGHT as u16)) as u8;
+        let start_tile_col: u8 = self.scx / TILE_WIDTH;
+        let end_tile_col: u8 = start_tile_col + 21;
+        let pixel_row = (self.scy as u16 + self.ly as u16) % TILE_HEIGHT as u16;
         
         let display_select = self.lcdc & (LCDCBits::BackgroundTilemapDisplaySelect as u8);
         let bg_tile_map_address: u16 = if (display_select) != 0 { 0x9C00 } else { 0x9800 };
@@ -358,18 +355,19 @@ impl PPU {
         let tile_data_base_address: u16 = if addressing_mode != 0 { 0x8000 } else { 0x8800 };
 
         let mut pixel_idx = 0;
+        let scx: u16 = self.scx as u16;
 
         for x in start_tile_col..end_tile_col {
             // read tile number from tile map
-            let tile_address = bg_tile_map_address + (((TILES_PER_ROW * (start_tile_row as u16 % TILES_PER_ROW)) + (x as u16 % TILES_PER_COL)) as u16);
+            let tile_address = bg_tile_map_address + (((TILES_PER_ROW as u16 * (start_tile_row % TILES_PER_ROW) as u16) + (x % TILES_PER_COL) as u16) as u16);
             let tile_number: u8 = self.read_byte(tile_address);
 
             // read tile data
             let tile_index: u8 = if addressing_mode != 0 { tile_number } else { ((tile_number as i16) + 128) as u8 };
             let tile_row_data = self.read_tile_data(tile_data_base_address, tile_index, pixel_row as u8);
 
-            let mut pixel_col = x * TILE_WIDTH;
-
+            let mut pixel_col = x as u16 * TILE_WIDTH as u16;
+            
             for i in 0..TILE_WIDTH {
                 if pixel_col >= scx && pixel_col <= scx + 160 && pixel_idx < 160 {
                     let color_idx = tile_row_data[i as usize] & 0x03;
@@ -379,6 +377,10 @@ impl PPU {
                 }
                 
                 pixel_col += 1;
+            }
+
+            if pixel_idx >= 160 {
+                break;
             }
         }
     }
@@ -390,33 +392,30 @@ impl PPU {
         let addressing_mode = self.lcdc & LCDCBits::TileDataSelect as u8;
         let tile_data_base_address: u16 = if addressing_mode != 0 { 0x8000 } else { 0x8800 };
 
-        let relative_line = (self.ly as i16) - (self.wpy as i16);
-        if relative_line >= 0 {
-            let start_tile_row: u16 = (relative_line as u16) / TILE_HEIGHT;
-            let pixel_row = (relative_line as u16) % TILE_HEIGHT;
-            // let mut pixel_idx = self.wpx as usize;
+        if self.ly >= self.wpy {
+            let relative_line = self.ly - self.wpy;
+            let start_tile_row = relative_line / TILE_HEIGHT;
+            let pixel_row = relative_line % TILE_HEIGHT;
         
+            let mut pixel_col: u8 = self.wpx.wrapping_sub(7);
+
             for x in 0..=20 {
                 // read tile number from tile map
-                let tile_address = window_tile_map_address + (((TILES_PER_ROW * (start_tile_row as u16 % TILES_PER_ROW)) + (x as u16 % TILES_PER_COL)) as u16);
+                let tile_address = window_tile_map_address + (((TILES_PER_ROW as u16 * (start_tile_row % TILES_PER_ROW) as u16) + (x % TILES_PER_COL) as u16) as u16);
                 let tile_number: u8 = self.read_byte(tile_address);
 
                 // read tile data
                 let tile_index: u8 = if addressing_mode != 0 { tile_number } else { ((tile_number as i16) + 128) as u8 };
                 let tile_row_data = self.read_tile_data(tile_data_base_address, tile_index, pixel_row as u8);
 
-                let mut pixel_col = ((self.wpx - 7) as u16) + (x * TILE_WIDTH);
-
                 for i in 0..TILE_WIDTH {
-                    // break as soon as we reach the end of the buffer
-                    if pixel_col >= 160 {
-                        break;
+                    if pixel_col < 160 {
+                        let color_idx = tile_row_data[i as usize] & 0x03;
+                        let color = (self.bg_palette & (3 << (color_idx * 2))) >> (color_idx * 2);
+                        scanline_buffer[pixel_col as usize] = color;
                     }
 
-                    let color_idx = tile_row_data[i as usize] & 0x03;
-                    let color = (self.bg_palette & (3 << (color_idx * 2))) >> (color_idx * 2);
-                    scanline_buffer[pixel_col as usize] = color;
-                    pixel_col += 1;
+                    pixel_col = pixel_col.wrapping_add(1);
                 }
 
                 if pixel_col >= 160 {

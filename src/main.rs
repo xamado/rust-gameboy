@@ -87,7 +87,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
              power_preference: wgpu::PowerPreference::HighPerformance,
              compatible_surface: None,
          })
-         .enable_vsync(true)
+         .enable_vsync(false)
          .build()?;
      
     pixels.resize(WINDOW_WIDTH, WINDOW_HEIGHT);
