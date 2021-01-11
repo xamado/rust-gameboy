@@ -57,11 +57,11 @@ impl Machine {
         }
         
         self.bus.borrow_mut().map(0x0000..=0x7FFF, self.rom.clone());  
-        self.bus.borrow_mut().map(0x8000..=0x9FFF, self.ram.clone());   // VRAM
+        self.bus.borrow_mut().map(0x8000..=0x9FFF, self.ppu.clone());   // VRAM
         self.bus.borrow_mut().map(0xA000..=0xBFFF, self.rom.clone());   // External RAM
         self.bus.borrow_mut().map(0xC000..=0xDFFF, self.ram.clone());   // Internal RAM
         // 0xE000..=0xFDFF Unusable
-        self.bus.borrow_mut().map(0xFE00..=0xFE9F, self.ram.clone());   // OAM Table
+        self.bus.borrow_mut().map(0xFE00..=0xFE9F, self.ppu.clone());   // OAM Table
         // 0XFEA0..=0xFEFF Unusable
         self.bus.borrow_mut().map(0xFF00..=0xFF00, self.joystick.clone());
         self.bus.borrow_mut().map(0xFF01..=0xFF02, self.serial.clone());

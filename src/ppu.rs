@@ -64,6 +64,8 @@ enum OBJAttributes {
 pub struct PPU {
     bus: Rc<RefCell<MemoryBus>>,
     screen: Rc<RefCell<Screen>>,
+    vram: [u8; 0x2000],
+    oam: [u8; 0x100],
     mode: PPUMode,
     line_cycles: u32,
     lcdc: u8,
@@ -87,6 +89,8 @@ impl PPU {
         Self {
             bus,
             screen,
+            vram: [0; 0x2000],
+            oam: [0; 0x100],
             mode: PPUMode::ReadOAM,
             line_cycles: 0,
             lcdc: 0x91,
@@ -358,7 +362,7 @@ impl PPU {
         for x in start_tile_col..end_tile_col {
             // read tile number from tile map
             let tile_address = bg_tile_map_address + (((TILES_PER_ROW * (start_tile_row as u16 % TILES_PER_ROW)) + (x as u16 % TILES_PER_COL)) as u16);
-            let tile_number: u8 = self.bus.borrow().read_byte(tile_address);
+            let tile_number: u8 = self.read_byte(tile_address);
 
             // read tile data
             let tile_index: u8 = if addressing_mode != 0 { tile_number } else { ((tile_number as i16) + 128) as u8 };
@@ -395,7 +399,7 @@ impl PPU {
             for x in 0..=20 {
                 // read tile number from tile map
                 let tile_address = window_tile_map_address + (((TILES_PER_ROW * (start_tile_row as u16 % TILES_PER_ROW)) + (x as u16 % TILES_PER_COL)) as u16);
-                let tile_number: u8 = self.bus.borrow().read_byte(tile_address);
+                let tile_number: u8 = self.read_byte(tile_address);
 
                 // read tile data
                 let tile_index: u8 = if addressing_mode != 0 { tile_number } else { ((tile_number as i16) + 128) as u8 };
@@ -423,15 +427,13 @@ impl PPU {
     }
 
     fn read_tile_data(&self, base_address: u16, tile_number: u8, row: u8) -> [u8; 8] {
-        let bus = self.bus.borrow();
-
         let tile_address = base_address + (tile_number as u16 * TILE_SIZE as u16);
 
         let offset: u16 = row as u16 * 2;
         let mut tile_row: [u8; 8] = [0; 8];
         
-        let lsb = bus.read_byte(tile_address + offset);
-        let msb = bus.read_byte(tile_address + offset + 1);
+        let lsb = self.read_byte(tile_address + offset);
+        let msb = self.read_byte(tile_address + offset + 1);
 
         for bit in (0..TILE_WIDTH).rev() {
             let mask: u8 = 1 << bit;
@@ -445,42 +447,39 @@ impl PPU {
 
     fn read_oam_entry(&self, idx: u8) -> OAMEntry {
         OAMEntry {
-            y: self.bus.borrow().read_byte(OAM_TABLE_ADDRESS + idx as u16 * 4),
-            x: self.bus.borrow().read_byte(OAM_TABLE_ADDRESS + idx  as u16 * 4 + 1),
-            tile: self.bus.borrow().read_byte(OAM_TABLE_ADDRESS + idx as u16 * 4 + 2),
-            flags: self.bus.borrow().read_byte(OAM_TABLE_ADDRESS + idx as u16 * 4 + 3)
+            y: self.read_byte(OAM_TABLE_ADDRESS + idx as u16 * 4),
+            x: self.read_byte(OAM_TABLE_ADDRESS + idx  as u16 * 4 + 1),
+            tile: self.read_byte(OAM_TABLE_ADDRESS + idx as u16 * 4 + 2),
+            flags: self.read_byte(OAM_TABLE_ADDRESS + idx as u16 * 4 + 3)
         }
     }
 
-    fn do_dma_transfer(&self, data: u8) {
+    fn do_dma_transfer(&mut self, data: u8) {
         let addr: u16 = (data as u16) << 8;
         let mut data: [u8; 0xA0] = [0; 0xA0];
-
-        // for i in 0..0xA0 {
-        //     let bus = self.bus.borrow();
-        //     data[i] = bus.read_byte(addr + (i as u16));
-        // }
         
+        let bus = self.bus.borrow();
         for (i, datum) in data.iter_mut().enumerate() {
-            let bus = self.bus.borrow();
             *datum = bus.read_byte(addr + (i as u16));
         }
 
         for (i, datum) in data.iter().enumerate() {
-            let mut bus = self.bus.borrow_mut();
-            bus.write_byte(0xFE00 + (i as u16), *datum);
+            self.oam[i as usize] = *datum;
         }
-
-        // for i in 0..0xA0 {
-        //     let mut bus = self.bus.borrow_mut();
-        //     bus.write_byte(0xFE00 + (i as u16), data[i]);
-        // }
     }
 }
 
 impl IOMapped for PPU {
     fn read_byte(&self, address: u16) -> u8 {
         match address {
+            0x8000..=0x9FFF => {
+                self.vram[(address - 0x8000) as usize]
+            },
+
+            0xFE00..=0xFE9F => {
+                self.oam[(address - 0xFE00) as usize]
+            },
+
             // FF40 LCDC - LCD Control (R/W)
             0xFF40 => self.lcdc,
 
@@ -538,6 +537,14 @@ impl IOMapped for PPU {
 
     fn write_byte(&mut self, address: u16, data: u8) {
         match address {
+            0x8000..=0x9FFF => {
+                self.vram[(address - 0x8000) as usize] = data;
+            },
+
+            0xFE00..=0xFE9F => {
+                self.oam[(address - 0xFE00) as usize] = data;
+            }
+
             // FF40 LCDC - LCD Control (R/W)
             0xFF40 => {
                 self.lcdc = data;
@@ -546,7 +553,7 @@ impl IOMapped for PPU {
                 // if !get_flag2(&self.lcdc, LCDCBits::LCDEnable as u8) {
                 //     self.ly = 0;
                 // }
-            }
+            },
 
             // FF41 STAT - LCDC Status (R/W)
             0xFF41 => self.stat = data & !0x3 | self.stat & 0x3,
@@ -568,14 +575,14 @@ impl IOMapped for PPU {
             // FF45 LYC - LY Compare (R/W)
             0xFF45 => {
                 self.lyc = data;
-            }
+            },
 
             // FF46 - DMA - DMA Transfer and Start Address (W)
             0xFF46 => {
                 // self.do_dma_transfer(data);
                 self.dma_active = true;
                 self.dma_source = data;
-            }
+            },
 
             // FF47 - BGP - BG Palette Data (R/W)
             0xFF47 => self.bg_palette = data,
