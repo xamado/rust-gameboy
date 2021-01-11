@@ -66,11 +66,11 @@ impl Machine {
         self.bus.borrow_mut().map(0xFF00..=0xFF00, self.joystick.clone());
         self.bus.borrow_mut().map(0xFF01..=0xFF02, self.serial.clone());
         self.bus.borrow_mut().map(0xFF04..=0xFF07, self.timer.clone());
-        self.bus.borrow_mut().map(0xFF0F..=0xFF0F, self.ram.clone());
+        self.bus.borrow_mut().map(0xFF0F..=0xFF0F, self.cpu.clone());   // Interrupts
         self.bus.borrow_mut().map(0xFF40..=0xFF4B, self.ppu.clone());
         // 0xFF4c..=0xFF7F Unusable
         self.bus.borrow_mut().map(0xFF80..=0xFFFE, self.ram.clone());   // HIGH RAM
-        self.bus.borrow_mut().map(0xFFFF..=0xFFFF, self.ram.clone());   // Interrupt Register // TODO: Map this to cpu directly?
+        self.bus.borrow_mut().map(0xFFFF..=0xFFFF, self.cpu.clone());   // Interrupts
     }
 
     pub fn load_rom(&self, file: &str) {
@@ -105,8 +105,9 @@ impl Machine {
 
         self.ppu.borrow_mut().step(clocks);
 
+        let mut timer = self.timer.borrow_mut();
         for _ in 0..clocks {
-            self.timer.borrow_mut().step_clock();
+            timer.step_clock();
         }
     }
 
