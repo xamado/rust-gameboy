@@ -4,6 +4,8 @@ version = "0.1.0"
 authors = ["Xavier Amado <xamado@gmail.com>"]
 edition = "2018"
 
+[profile.release]
+debug = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
@@ -12,3 +14,4 @@ env_logger = "0.8.2"
 log = "0.4.8"
 pixels = "0.2.0"
 clap = "2.33.3"
+bytemuck = "1.4.1"

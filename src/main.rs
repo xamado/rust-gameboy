@@ -21,6 +21,7 @@ mod bitutils;
 mod serial;
 mod debugger;
 mod bootrom;
+mod apu;
 
 use machine::Machine;
 use joystick::JoystickButton;
@@ -31,6 +32,13 @@ const BUFFER_WIDTH: u32 = 160;
 const BUFFER_HEIGHT: u32 = 144;
 const WINDOW_WIDTH: u32 = BUFFER_WIDTH * 4;
 const WINDOW_HEIGHT: u32 = BUFFER_HEIGHT * 4;
+
+const SCREEN_COLORS: [Color; 4] = [
+    Color { r: 255, g: 255, b: 255 },
+    Color { r: 126, g: 126, b: 126 },
+    Color { r: 63, g: 63, b: 63 },
+    Color { r: 0, g: 0, b: 0 }
+];
 
 // const BOX_SIZE: i16 = 64;
 
@@ -92,6 +100,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
      
     pixels.resize(WINDOW_WIDTH, WINDOW_HEIGHT);
 
+    let request = AudioQueueRequest {
+        frequency: 44100,
+        sample_format: AudioFormat::U16_SYS,
+        sample_count: 4096,
+        channels: AudioChannels::Stereo,
+        allow_frequency_change: false,
+        allow_format_change: false,
+        allow_channels_change: false
+    };
+
+    let device_name = sdl.get_audio_playback_device_name(0).expect("No audio device");
+    let queue: AudioQueue = sdl.open_audio_queue(Some(&device_name[..]), request)?;
+    queue.set_paused(false);
+    println!("device name: {}", device_name);
+
     let mut debugger = Debugger::new();
     
     // Add breakpoints
@@ -121,6 +144,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let frame_time: f32 = 1.0 / 60.0;
 
     'game_loop: loop {
+        // process input
         match sdl.poll_events().and_then(Result::ok) {
             // Close events
             Some(Event::Quit { .. }) => break 'game_loop,
@@ -218,45 +242,50 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             _ => (),
         }
 
-        machine.step();
+        // process logic
+        machine.step();      
 
+        // update screen if there's a fb ready
         let mut screen = machine.get_screen().borrow_mut();
         if screen.is_vblank() {
-            let fb = screen.get_framebuffer();
+            // Queue audio samples first
+            let audio_buffer = machine.get_audio_buffer();
+            let len = audio_buffer.len();
+            let s = bytemuck::cast_slice(&audio_buffer[0..len]);
+            queue.queue_audio(&s);
 
-            let colors: [Color; 4] = [
-                Color { r: 255, g: 255, b: 255 },
-                Color { r: 126, g: 126, b: 126 },
-                Color { r: 63, g: 63, b: 63 },
-                Color { r: 0, g: 0, b: 0 }
-            ];
-    
+            // let mut queued_size = queue.get_queued_byte_count();
+
+            // Update pixels' framebuffer
+            let fb = screen.get_framebuffer();
             let frame = pixels.get_frame();
             for (i, pixel) in frame.chunks_exact_mut(4).enumerate() {
                 let fb_idx = fb[i] as usize;
-                let c = colors[fb_idx];
+                let c = SCREEN_COLORS[fb_idx];
                 pixel[0] = c.r;
                 pixel[1] = c.g;
                 pixel[2] = c.b;
                 pixel[3] = 255;
             }
 
-            screen.set_vblank(false);
-            
             // Draw the current frame
             pixels.render()?;
+            screen.set_vblank(false);
 
-            // Sync to 60hz
+            // Sync to 60hz, only if we have enough audio samples
             let elapsed = instant.elapsed().as_secs_f32();
-            if elapsed < frame_time {
+            if queue.get_queued_byte_count() > 8192 && elapsed < frame_time {
                 sleep(Duration::from_secs_f32(frame_time - elapsed));
             }
-
-            instant = Instant::now();
+            else {
+                // println!("skip");
+            }
 
             // Update window title
             let window_title = format!("{} ({}ms)", WINDOW_TITLE, (elapsed * 1000.0) as u32);
-            window.set_title(&window_title);            
+            window.set_title(&window_title);
+
+            instant = Instant::now();
         }
 
     }

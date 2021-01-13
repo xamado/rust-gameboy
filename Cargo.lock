@@ -816,6 +816,7 @@ name = "rust-gameboy"
 version = "0.1.0"
 dependencies = [
  "beryllium",
+ "bytemuck",
  "clap",
  "env_logger",
  "log",
