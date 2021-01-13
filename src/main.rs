@@ -85,7 +85,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opt_no_bootrom = cli_matches.occurrences_of("no-bootrom") > 0;
     let opt_breakpoints = cli_matches.value_of("breakpoints").unwrap_or("");
     let opt_watchpoints = cli_matches.value_of("watchpoints").unwrap_or("");
-
+    
     let sdl = SDL::init(InitFlags::default())?;
     let mut window = sdl.create_raw_window(WINDOW_TITLE, WindowPosition::Centered, WINDOW_WIDTH, WINDOW_HEIGHT, 0)?;
     
@@ -243,51 +243,52 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // process logic
-        machine.step();      
+        'emulator_loop: loop {
+            machine.step();
 
-        // update screen if there's a fb ready
-        let mut screen = machine.get_screen().borrow_mut();
-        if screen.is_vblank() {
-            // Queue audio samples first
-            let audio_buffer = machine.get_audio_buffer();
-            let len = audio_buffer.len();
-            let s = bytemuck::cast_slice(&audio_buffer[0..len]);
-            queue.queue_audio(&s);
-
-            // let mut queued_size = queue.get_queued_byte_count();
-
-            // Update pixels' framebuffer
-            let fb = screen.get_framebuffer();
-            let frame = pixels.get_frame();
-            for (i, pixel) in frame.chunks_exact_mut(4).enumerate() {
-                let fb_idx = fb[i] as usize;
-                let c = SCREEN_COLORS[fb_idx];
-                pixel[0] = c.r;
-                pixel[1] = c.g;
-                pixel[2] = c.b;
-                pixel[3] = 255;
-            }
-
-            // Draw the current frame
-            pixels.render()?;
-            screen.set_vblank(false);
-
-            // Sync to 60hz, only if we have enough audio samples
-            let elapsed = instant.elapsed().as_secs_f32();
-            if queue.get_queued_byte_count() > 8192 && elapsed < frame_time {
-                sleep(Duration::from_secs_f32(frame_time - elapsed));
-            }
-            else {
-                // println!("skip");
-            }
-
-            // Update window title
-            let window_title = format!("{} ({}ms)", WINDOW_TITLE, (elapsed * 1000.0) as u32);
-            window.set_title(&window_title);
-
-            instant = Instant::now();
+            let screen = machine.get_screen().borrow();
+            if screen.is_vblank() {
+                break 'emulator_loop;
+            }    
         }
 
+        // Queue audio samples first
+        let audio_buffer = machine.get_audio_buffer();
+        let len = audio_buffer.len();
+        let s = bytemuck::cast_slice(&audio_buffer[0..len]);
+        queue.queue_audio(&s);
+
+        // Update pixels' framebuffer
+        let mut screen = machine.get_screen().borrow_mut();
+        let fb = screen.get_framebuffer();
+        let frame = pixels.get_frame();
+        for (i, pixel) in frame.chunks_exact_mut(4).enumerate() {
+            let fb_idx = fb[i] as usize;
+            let c = SCREEN_COLORS[fb_idx];
+            pixel[0] = c.r;
+            pixel[1] = c.g;
+            pixel[2] = c.b;
+            pixel[3] = 255;
+        }
+
+        // Draw the current frame
+        pixels.render()?;
+        screen.set_vblank(false);
+
+        // Sync to 60hz, only if we have enough audio samples
+        let elapsed = instant.elapsed().as_secs_f32();
+        if queue.get_queued_byte_count() > 8192 && elapsed < frame_time {
+            sleep(Duration::from_secs_f32(frame_time - elapsed));
+        }
+        else {
+            // println!("skip");
+        }
+
+        // Update window title
+        let window_title = format!("{} ({}ms)", WINDOW_TITLE, (elapsed * 1000.0) as u32);
+        window.set_title(&window_title);
+
+        instant = Instant::now();
     }
 
     Ok(())
