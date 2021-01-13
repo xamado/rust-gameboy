@@ -1,6 +1,20 @@
 use crate::iomapped::IOMapped;
 use std::str;
 
+pub trait MBC {
+    #[allow(unused)]
+    fn read_byte(&self, address: u16) -> u8 { 0 }
+
+    #[allow(unused)]
+    fn write_byte(&mut self, address: u16, data: u8) {}
+    
+    #[allow(unused)]
+    fn get_ram_contents(&self) -> Option<&Vec<u8>> { None }
+
+    #[allow(unused)]
+    fn set_ram_contents(&mut self, ram: &[u8]) { }
+}
+
 pub struct MBC0 {
     data: Vec<u8>,
 }
@@ -13,7 +27,7 @@ impl MBC0 {
     }
 }
 
-impl IOMapped for MBC0 {
+impl MBC for MBC0 {
     fn read_byte(&self, address: u16) -> u8 {
         match address {
             0x0000..=0x7FFF => {
@@ -68,7 +82,7 @@ impl MBC1 {
     }
 }
 
-impl IOMapped for MBC1 {
+impl MBC for MBC1 {
     fn read_byte(&self, address: u16) -> u8 {
         match address {
             0x0000..=0x3FFF => {
@@ -136,12 +150,21 @@ impl IOMapped for MBC1 {
             _ => panic!("Invalid ROM write {:#06x}", address)
         }
     }
+
+    fn get_ram_contents(&self) -> Option<&Vec<u8>> {
+        Some(&self.ram)
+    }
+
+    fn set_ram_contents(&mut self, ram: &[u8]) {
+        self.ram.copy_from_slice(ram);
+    }
 }
 
 pub struct MBC3 {
     data: Vec<u8>,
     ram: Vec<u8>,
     ram_enabled: bool,
+    ram_dirty: bool,
     mode: u8,
     rom_bank: u8,
     ram_bank: u8,
@@ -168,6 +191,7 @@ impl MBC3 {
             data: data.to_vec(),
             mode: 0,
             ram_enabled: false,
+            ram_dirty: false,
             ram: vec!(0; vec_ram_size), 
             rom_bank: 1,
             ram_bank: 0,
@@ -177,7 +201,7 @@ impl MBC3 {
     }
 }
 
-impl IOMapped for MBC3 {
+impl MBC for MBC3 {
     fn read_byte(&self, address: u16) -> u8 {
         match address {
             0x0000..=0x3FFF => {
@@ -238,17 +262,25 @@ impl IOMapped for MBC3 {
                     let ram_addr: u32 = (ram_bank * 0x2000) + ((address - 0xA000) as u32);
                     self.ram[ram_addr as usize] = data;
 
-                    // println!("RAM{}:{:#04x} {:#04x}", ram_bank, address, data);
+                    self.ram_dirty = true;
                 }
             },
 
             _ => panic!("Invalid ROM write {:#06x}", address)
         }
     }
+
+    fn get_ram_contents(&self) -> Option<&Vec<u8>> {
+        Some(&self.ram)
+    }
+
+    fn set_ram_contents(&mut self, ram: &[u8]) {
+        self.ram.copy_from_slice(ram);
+    }
 }
 
 pub struct ROM {
-    mbc: Option<Box<dyn IOMapped>>
+    mbc: Option<Box<dyn MBC>>
 }
 
 // pub struct CartridgeHeader {
@@ -270,8 +302,7 @@ impl ROM {
     }
 
     pub fn open(&mut self, filename : &str) {
-        let bytes = std::fs::read(&filename).unwrap();
-        // let length = bytes.len();
+        let bytes = std::fs::read(&filename).expect("Failed to open ROM");
 
         let cart_type = bytes[0x0147];
         let rom_size = bytes[0x0148];
@@ -291,6 +322,21 @@ impl ROM {
         };
         
         println!("Loaded ROM {}: {} bytes read. Type: {}.", filename, bytes.len(), cart_type);
+    }
+
+    pub fn get_ram_contents(&self) -> Option<&Vec<u8>> {
+        if let Some(mbc) = &self.mbc {
+            mbc.get_ram_contents()
+        }
+        else {
+            None
+        }   
+    }
+
+    pub fn set_ram_contents(&mut self, ram: &[u8]) {
+        if let Some(mbc) = &mut self.mbc {
+            mbc.set_ram_contents(&ram);
+        }
     }
 }
 

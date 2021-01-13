@@ -256,7 +256,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let audio_buffer = machine.get_audio_buffer();
         let len = audio_buffer.len();
         let s = bytemuck::cast_slice(&audio_buffer[0..len]);
-        queue.queue_audio(&s);
+
+        if let Err(e) = queue.queue_audio(&s) {
+            println!("Error queing audio: {:?}", e);
+        }
 
         // Update pixels' framebuffer
         let mut screen = machine.get_screen().borrow_mut();
@@ -289,6 +292,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         window.set_title(&window_title);
 
         instant = Instant::now();
+    }
+
+    if let Err(e) = machine.save_status() {
+        println!("Error saving state: {:?}", e);
     }
 
     Ok(())
