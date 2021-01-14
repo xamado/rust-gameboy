@@ -79,7 +79,8 @@ pub struct PPU {
     obj_palette1: u8,
     dma_active: bool,
     dma_source: u8,
-    total_vblank_cycles: u32
+    total_vblank_cycles: u32,
+    trigger_stat_quirk: bool,
 }
 
 impl PPU {
@@ -105,10 +106,18 @@ impl PPU {
             dma_active: false,
             dma_source: 0,
             total_vblank_cycles: 0,
+            trigger_stat_quirk: false,
         }
     }
 
     pub fn tick(&mut self) {
+        // HACK: In DMG writing anything to STAT while in HBLANK or VBLANK causes bit 1 of the IF register (0xFF0F) to be set
+        // Roadrash and Legend of Zerd depend on this bug
+        if self.trigger_stat_quirk {
+            self.raise_interrupt(Interrupts::LCDStat);
+            self.trigger_stat_quirk = false;
+        }
+
         // in theory dma copy takes a while... in fact:
         // This copy needs 160 × 4 + 4 clocks to
         // complete in both double speed and single speeds modes. The copy starts after the 4 setup clocks,
@@ -241,6 +250,12 @@ impl PPU {
                 self.bus.borrow_mut().write_byte(0xFF0F, iif);
             }
         }
+    }
+
+    fn raise_interrupt(&self, interrupt: Interrupts) {
+        let mut iif = self.bus.borrow().read_byte(0xFF0F);
+        iif |= 1 << interrupt as u8;
+        self.bus.borrow_mut().write_byte(0xFF0F, iif);
     }
 
     fn pick_visible_objects(&self) -> Vec<(u8, OAMEntry)> {
@@ -567,7 +582,13 @@ impl IOMapped for PPU {
             },
 
             // FF41 STAT - LCDC Status (R/W)
-            0xFF41 => self.stat = data & !0x3 | self.stat & 0x3,
+            0xFF41 => {
+                self.stat = data & !0x3 | self.stat & 0x3;
+
+                if self.mode == PPUMode::HBlank || self.mode == PPUMode::VBlank {
+                    self.trigger_stat_quirk = true;
+                }
+            },
 
             // FF42 SCY - Scroll Y (R/W)
             0xFF42 => self.scy = data,  
