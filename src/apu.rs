@@ -181,8 +181,6 @@ impl IOMapped for APU {
                 self.channel1.sweep_period = (data & 0x70) >> 4;
                 self.channel1.sweep_direction = (data & 0x08) != 0;
                 self.channel1.sweep_shift = data & 0x07;
-
-                self.channel1.sweep_timer = self.channel1.sweep_period;
             }
 
             // NR11 - Channel 1 Sound length / Wave pattern duty (R/W)

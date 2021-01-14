@@ -11,10 +11,10 @@ pub struct Channel2 {
     pub envelope_direction: bool,
     pub envelope_period: u8,
     pub envelope_initial: u8,
-    envelope_counter: u8,
+    volume: u8,
        
     waveforms: [[u8; 8]; 4],
-    waveform_timer: i16,
+    output_timer: i16,
     waveform_timer_load: u16,
     waveform_value: u8,
     
@@ -30,15 +30,16 @@ impl Channel2 {
             dac_enabled: false,
             trigger: false,
             output: 0,
+            output_timer: 0,
+            volume: 0,
+
             length_counter: 0,
             length_counter_enabled: false,
             envelope_timer: 0,
-            envelope_counter: 0,
             envelope_initial: 0,
             envelope_period: 0,
             envelope_direction: false,
             frequency: 0,
-            waveform_timer: 0,
             waveform_timer_load: 0,
             waveform_value: 0,
             waveforms: [
@@ -52,9 +53,9 @@ impl Channel2 {
     }
 
     pub fn tick(&mut self) {
-        self.waveform_timer -= 1;
-        if self.waveform_timer <= 0 {
-            self.waveform_timer = self.waveform_timer_load as i16;
+        self.output_timer -= 1;
+        if self.output_timer <= 0 {
+            self.output_timer = self.waveform_timer_load as i16;
 
             self.waveform_value = (self.waveform_value + 1) % 8;
         }
@@ -63,7 +64,7 @@ impl Channel2 {
         let waveform_value = self.waveforms[self.duty as usize][self.waveform_value as usize];
         
         self.output = if self.enabled && self.dac_enabled && waveform_value != 0 {
-            self.envelope_counter
+            self.volume
         }
         else {
             0
@@ -94,14 +95,14 @@ impl Channel2 {
                 let volume;
 
                 if self.envelope_direction {
-                    volume = self.envelope_counter.wrapping_add(1);
+                    volume = self.volume.wrapping_add(1);
                 }
                 else {
-                    volume = self.envelope_counter.wrapping_sub(1);
+                    volume = self.volume.wrapping_sub(1);
                 }
 
                 if volume <= 15 {
-                    self.envelope_counter = volume;
+                    self.volume = volume;
                 }
             }
         }
@@ -114,10 +115,10 @@ impl Channel2 {
         }
 
         self.envelope_timer = self.envelope_period;
-        self.envelope_counter = self.envelope_initial;
+        self.volume = self.envelope_initial;
 
         self.waveform_timer_load = (2048 - self.frequency) * 4;
-        self.waveform_timer = self.waveform_timer_load as i16;
+        self.output_timer = self.waveform_timer_load as i16;
     }
 
     pub fn get_output(&self) -> u8 {
