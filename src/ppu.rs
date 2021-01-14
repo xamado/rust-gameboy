@@ -16,8 +16,6 @@ const TILES_PER_ROW: u8 = 32;
 const TILES_PER_COL: u8 = 32;
 const TILE_SIZE: u8 = 16;
 
-const OAM_TABLE_ADDRESS: u16 = 0xFE00;
-
 #[allow(unused)]
 enum LCDCBits {
     LCDEnable = 1 << 7,
@@ -38,7 +36,7 @@ enum STATBits {
     LYCComparisonSignal = 1 << 2    
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 enum PPUMode {
     HBlank = 0,
     VBlank = 1,
@@ -360,7 +358,7 @@ impl PPU {
         for x in start_tile_col..end_tile_col {
             // read tile number from tile map
             let tile_address = bg_tile_map_address + (((TILES_PER_ROW as u16 * (start_tile_row % TILES_PER_ROW) as u16) + (x % TILES_PER_COL) as u16) as u16);
-            let tile_number: u8 = self.read_byte(tile_address);
+            let tile_number: u8 = self.vram[(tile_address - 0x8000) as usize];
 
             // read tile data
             let tile_index: u8 = if addressing_mode != 0 { tile_number } else { ((tile_number as i16) + 128) as u8 };
@@ -402,7 +400,7 @@ impl PPU {
             for x in 0..=20 {
                 // read tile number from tile map
                 let tile_address = window_tile_map_address + (((TILES_PER_ROW as u16 * (start_tile_row % TILES_PER_ROW) as u16) + (x % TILES_PER_COL) as u16) as u16);
-                let tile_number: u8 = self.read_byte(tile_address);
+                let tile_number: u8 = self.vram[(tile_address - 0x8000) as usize];
 
                 // read tile data
                 let tile_index: u8 = if addressing_mode != 0 { tile_number } else { ((tile_number as i16) + 128) as u8 };
@@ -431,8 +429,8 @@ impl PPU {
         let offset: u16 = row as u16 * 2;
         let mut tile_row: [u8; 8] = [0; 8];
         
-        let lsb = self.read_byte(tile_address + offset);
-        let msb = self.read_byte(tile_address + offset + 1);
+        let lsb = self.vram[(tile_address - 0x8000 + offset) as usize];
+        let msb = self.vram[(tile_address - 0x8000 + offset + 1) as usize];
 
         for bit in (0..TILE_WIDTH).rev() {
             let mask: u8 = 1 << bit;
@@ -446,10 +444,10 @@ impl PPU {
 
     fn read_oam_entry(&self, idx: u8) -> OAMEntry {
         OAMEntry {
-            y: self.read_byte(OAM_TABLE_ADDRESS + idx as u16 * 4),
-            x: self.read_byte(OAM_TABLE_ADDRESS + idx  as u16 * 4 + 1),
-            tile: self.read_byte(OAM_TABLE_ADDRESS + idx as u16 * 4 + 2),
-            flags: self.read_byte(OAM_TABLE_ADDRESS + idx as u16 * 4 + 3)
+            y: self.oam[(idx as u16 * 4) as usize],
+            x: self.oam[(idx  as u16 * 4 + 1) as usize],
+            tile: self.oam[(idx as u16 * 4 + 2) as usize],
+            flags: self.oam[(idx as u16 * 4 + 3) as usize]
         }
     }
 
@@ -472,11 +470,21 @@ impl IOMapped for PPU {
     fn read_byte(&self, address: u16) -> u8 {
         match address {
             0x8000..=0x9FFF => {
-                self.vram[(address - 0x8000) as usize]
+                if self.mode == PPUMode::ReadVRAM {
+                    0xFF
+                }
+                else {
+                    self.vram[(address - 0x8000) as usize]
+                }
             },
 
             0xFE00..=0xFE9F => {
-                self.oam[(address - 0xFE00) as usize]
+                if self.mode == PPUMode::ReadVRAM || self.mode == PPUMode::ReadOAM {
+                    0xFF
+                }
+                else {
+                    self.oam[(address - 0xFE00) as usize]
+                }
             },
 
             // FF40 LCDC - LCD Control (R/W)
@@ -537,11 +545,15 @@ impl IOMapped for PPU {
     fn write_byte(&mut self, address: u16, data: u8) {
         match address {
             0x8000..=0x9FFF => {
-                self.vram[(address - 0x8000) as usize] = data;
+                if self.mode != PPUMode::ReadVRAM {
+                    self.vram[(address - 0x8000) as usize] = data;
+                }
             },
 
             0xFE00..=0xFE9F => {
-                self.oam[(address - 0xFE00) as usize] = data;
+                if self.mode != PPUMode::ReadVRAM && self.mode != PPUMode::ReadOAM {
+                    self.oam[(address - 0xFE00) as usize] = data;
+                }
             }
 
             // FF40 LCDC - LCD Control (R/W)
@@ -566,7 +578,7 @@ impl IOMapped for PPU {
             // FF44 - LY - LCDC Y-Coordinate (R)
             0xFF44 => {
                 // if LCD is disabled, then we reset LY
-                if !get_flag2(&self.lcdc, 1 << 7) {
+                if !get_flag2(&self.lcdc, LCDCBits::LCDEnable as u8) {
                     self.ly = 0;
                 }
             },
