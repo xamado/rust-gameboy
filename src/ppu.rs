@@ -239,16 +239,13 @@ impl PPU {
     }
 
     fn check_lyc_compare(&mut self) {
-        if get_flag2(&self.stat, STATBits::LYCCheckEnable as u8) {
-            // update bit 2 with the comparison result
-            let ly_eq_lyc = self.ly == self.lyc;
-            set_flag2(&mut self.stat, STATBits::LYCComparisonSignal as u8, ly_eq_lyc);
+        // update bit 2 with the comparison result
+        let ly_eq_lyc = self.ly == self.lyc;
+        set_flag2(&mut self.stat, STATBits::LYCComparisonSignal as u8, ly_eq_lyc);
 
-            if ly_eq_lyc {
-                // raise the stat interrupt
-                let iif = self.bus.borrow().read_byte(0xFF0F) | (1 << Interrupts::LCDStat as u8);
-                self.bus.borrow_mut().write_byte(0xFF0F, iif);
-            }
+        if get_flag2(&self.stat, STATBits::LYCCheckEnable as u8) && ly_eq_lyc {
+            // raise the stat interrupt
+            self.raise_interrupt(Interrupts::LCDStat);
         }
     }
 
