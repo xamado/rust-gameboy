@@ -94,8 +94,10 @@ impl Machine {
         let mut path = PathBuf::from(rom_filename);
         path.set_extension("sav");
 
-        let bytes = std::fs::read(&path).expect("Failed to open RAM");
-        self.rom.borrow_mut().set_ram_contents(&bytes);
+        if path.exists() {
+            let bytes = std::fs::read(&path).expect("Failed to open RAM");
+            self.rom.borrow_mut().set_ram_contents(&bytes);
+        }
     }
 
 
