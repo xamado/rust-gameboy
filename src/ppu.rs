@@ -137,27 +137,32 @@ impl PPU {
         self.total_vblank_cycles += 1;
         
         match self.mode {
-            // OAM access mode
+            // OAM access mode Mode 2
             PPUMode::ReadOAM => { 
-                // wait for 82 cycles, then go to mode VRAM READ MODE
-                if self.line_cycles >= 82 {
+                // wait for 84 cycles, then go to mode VRAM READ MODE
+                if self.line_cycles == 84 {
                     self.set_mode(PPUMode::ReadVRAM);
                 }
             },
 
-            // VRAM read mode
+            // VRAM ACCESS - Mode 3
             PPUMode::ReadVRAM => {
-                if self.line_cycles >= 252 {
+                if self.line_cycles == 256 {
                     // draw scanline
                     self.render_scanline();
 
                     self.set_mode(PPUMode::HBlank);
                 }
+                
+                // HBlank STAT interrupt happens 1 cycle before mode switch
+                else if self.line_cycles == 252 && self.stat & (STATBits::Mode0HBlankCheckEnable as u8) != 0 {
+                    self.raise_interrupt(Interrupts::LCDStat);
+                }
             },
 
-            // HBLANK
+            // HBLANK - Mode 0
             PPUMode::HBlank => { 
-                if self.line_cycles >= 456 {
+                if self.line_cycles == 456 {
                     self.line_cycles -= 456;
                     
                     // update LY
@@ -175,9 +180,9 @@ impl PPU {
                 }
             },
 
-            // VBLANK
+            // VBLANK - Mode 1
             PPUMode::VBlank => { 
-                if self.line_cycles >= 456 {
+                if self.line_cycles == 456 {
                     self.line_cycles -= 456;
 
                     // update LY
@@ -205,9 +210,6 @@ impl PPU {
 
         match self.mode {
             PPUMode::HBlank => {
-                if self.stat & (STATBits::Mode0HBlankCheckEnable as u8) != 0 {
-                    iif |= 1 << Interrupts::LCDStat as u8;
-                }
             },
 
             PPUMode::VBlank => {
