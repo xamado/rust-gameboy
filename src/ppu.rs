@@ -110,7 +110,7 @@ impl PPU {
         }
     }
 
-    pub fn step(&mut self, cycles: u8) {
+    pub fn tick(&mut self) {
         // in theory dma copy takes a while... in fact:
         // This copy needs 160 × 4 + 4 clocks to
         // complete in both double speed and single speeds modes. The copy starts after the 4 setup clocks,
@@ -126,8 +126,8 @@ impl PPU {
             return;
         }
 
-        self.line_cycles += cycles as u32;
-        self.total_vblank_cycles += cycles as u32;
+        self.line_cycles += 1;
+        self.total_vblank_cycles += 1;
         
         match self.mode {
             // OAM access mode

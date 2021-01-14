@@ -144,15 +144,9 @@ impl Machine {
         let cpu_cycles = self.cpu.borrow_mut().step();
         let clocks = cpu_cycles * 4;
 
-        self.ppu.borrow_mut().step(clocks);
-
-        let mut timer = self.timer.borrow_mut();
         for _ in 0..clocks {
-            timer.step_clock();
-        }
-
-        // let apu_clocks = clocks / 2;
-        for _ in 0..clocks {
+            self.timer.borrow_mut().tick();
+            self.ppu.borrow_mut().tick();
             self.apu.borrow_mut().tick();
         }
     }

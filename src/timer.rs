@@ -40,7 +40,7 @@ impl Timer {
         }
     }
 
-    pub fn step_clock(&mut self) {
+    pub fn tick(&mut self) {
         self.internal_counter = self.internal_counter.wrapping_add(1);
 
         // TIMA overflow resets after 4 cycles
