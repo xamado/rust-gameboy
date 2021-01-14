@@ -303,14 +303,15 @@ impl PPU {
         let w_enabled = (self.lcdc & (LCDCBits::WindowEnable as u8)) != 0;
         let obj_enabled = (self.lcdc & (LCDCBits::OBJDisplayEnable as u8)) != 0;
 
-        let mut scanline_buffer: [u8; 160] = [0; 160];
+        let mut bg_buffer: [u8; 160] = [0; 160];
+        let mut obj_buffer: [u8; 160] = [255; 160];
 
         if bg_enabled {
-            self.draw_background(&mut scanline_buffer);
+            self.draw_background(&mut bg_buffer);
         }
 
         if w_enabled {
-            self.draw_window(&mut scanline_buffer);
+            self.draw_window(&mut bg_buffer);
         }
 
         if obj_enabled {
@@ -343,21 +344,33 @@ impl PPU {
                     if x.wrapping_add(p) >= 160 {
                         continue;
                     }
+                    
+                    let idx = x.wrapping_add(p) as usize;
+                    if priority && bg_buffer[idx] != 0 {
+                        continue;
+                    }
 
                     let colors: u8 = if palette { self.obj_palette1 } else { self.obj_palette0 };
-                    let idx = x.wrapping_add(p) as usize;
-                    if priority && scanline_buffer[idx] != 0 {
-                        continue;
-                    }
-
                     let color_idx = if flip_x { obj_tile_data[TILE_WIDTH as usize - 1 - p as usize] } else { obj_tile_data[p as usize] };
-                    if color_idx == 0 {
-                        continue;
-                    }
 
-                    let color = (colors & (3 << (color_idx * 2))) >> (color_idx * 2);
-                    scanline_buffer[idx] = color;
+                    if color_idx != 0 {
+                        let color = (colors & (3 << (color_idx * 2))) >> (color_idx * 2);
+                        obj_buffer[idx] = color;
+                    }
                 }
+            }
+        }
+
+        // 
+
+        let mut scanline_buffer: [u8; 160] = [0; 160];
+        for i in 0..160 {
+            if obj_buffer[i] != 255 { // using 255 as a mask
+                scanline_buffer[i] = obj_buffer[i];
+            }
+            else {
+                let bg_color = (self.bg_palette & (3 << (bg_buffer[i] * 2))) >> (bg_buffer[i] * 2);
+                scanline_buffer[i] = bg_color;
             }
         }
 
@@ -393,8 +406,7 @@ impl PPU {
             for i in 0..TILE_WIDTH {
                 if pixel_col >= scx && pixel_col <= scx + 160 && pixel_idx < 160 {
                     let color_idx = tile_row_data[i as usize] & 0x03;
-                    let color = (self.bg_palette & (3 << (color_idx * 2))) >> (color_idx * 2);
-                    scanline_buffer[pixel_idx] = color;
+                    scanline_buffer[pixel_idx] = color_idx;
                     pixel_idx += 1;
                 }
                 
@@ -433,8 +445,7 @@ impl PPU {
                 for i in 0..TILE_WIDTH {
                     if pixel_col < 160 {
                         let color_idx = tile_row_data[i as usize] & 0x03;
-                        let color = (self.bg_palette & (3 << (color_idx * 2))) >> (color_idx * 2);
-                        scanline_buffer[pixel_col as usize] = color;
+                        scanline_buffer[pixel_col as usize] = color_idx;
                     }
 
                     pixel_col = pixel_col.wrapping_add(1);
