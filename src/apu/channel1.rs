@@ -3,6 +3,10 @@ pub struct Channel1 {
     enabled: bool,
     pub dac_enabled: bool,
     pub trigger: bool,
+    output_timer: i16,
+    output_timer_period: u16,
+    volume: u8,
+    pub frequency: u16,
     
     pub length_counter: u8,
     pub length_counter_enabled: bool,
@@ -11,7 +15,6 @@ pub struct Channel1 {
     pub envelope_direction: bool,
     pub envelope_period: u8,
     pub envelope_initial: u8,
-    volume: u8,
     
     sweep_enabled: bool,
     pub sweep_period: u8,
@@ -21,11 +24,8 @@ pub struct Channel1 {
     sweep_frequency_shadow: u16,
     
     waveforms: [[u8; 8]; 4],
-    output_timer: i16,
-    output_timer_period: u16,
     waveform_index: u8,
     
-    pub frequency: u16,
     pub duty: u8,
     output: u8
 }

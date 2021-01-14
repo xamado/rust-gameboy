@@ -102,7 +102,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let request = AudioQueueRequest {
         frequency: 44100,
-        sample_format: AudioFormat::U16_SYS,
+        sample_format: AudioFormat::I16_SYS,
         sample_count: 4096,
         channels: AudioChannels::Stereo,
         allow_frequency_change: false,

@@ -122,7 +122,7 @@ impl Machine {
         &self.joystick
     }
 
-    pub fn get_audio_buffer(&self) -> Vec<u16> {
+    pub fn get_audio_buffer(&self) -> Vec<i16> {
         self.apu.borrow_mut().get_audio_samples()
     }
     
