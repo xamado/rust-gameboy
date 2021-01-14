@@ -257,6 +257,16 @@ impl PPU {
         self.bus.borrow_mut().write_byte(0xFF0F, iif);
     }
 
+    fn disable_lcd(&mut self) {
+        self.ly = 0;
+        self.line_cycles = 0;
+        self.mode = PPUMode::HBlank;
+    }
+
+    fn enable_lcd(&mut self) {
+        set_flag2(&mut self.stat, STATBits::LYCComparisonSignal as u8, true);
+    }
+
     fn pick_visible_objects(&self) -> Vec<(u8, OAMEntry)> {
         let mode_8x16 = (self.lcdc & (LCDCBits::OBJSize as u8)) != 0;
         let height = if mode_8x16 { 16 } else { 8 };
@@ -523,12 +533,7 @@ impl IOMapped for PPU {
 
             // FF44 - LY - LCDC Y-Coordinate (R)
             0xFF44 => {
-                if !get_flag2(&self.lcdc, 1 << 7) {
-                    0
-                }
-                else {
-                    self.ly
-                }
+                self.ly
             }
 
             // FF45 LYC - LY Compare (R/W)
@@ -572,17 +577,21 @@ impl IOMapped for PPU {
 
             // FF40 LCDC - LCD Control (R/W)
             0xFF40 => {
+                let was_on = get_flag2(&self.lcdc, LCDCBits::LCDEnable as u8);
                 self.lcdc = data;
+                let is_on = get_flag2(&self.lcdc, LCDCBits::LCDEnable as u8);
 
-                // TODO: This crashes super mario land... but it should be reset..
-                // if !get_flag2(&self.lcdc, LCDCBits::LCDEnable as u8) {
-                //     self.ly = 0;
-                // }
+                if was_on && !is_on {
+                    self.disable_lcd();
+                }
+                else if !was_on && is_on {
+                    self.enable_lcd();
+                }
             },
 
             // FF41 STAT - LCDC Status (R/W)
             0xFF41 => {
-                self.stat = data & !0x3 | self.stat & 0x3;
+                self.stat = data & !0x7 | self.stat & 0x7;
 
                 if self.mode == PPUMode::HBlank || self.mode == PPUMode::VBlank {
                     self.trigger_stat_quirk = true;
@@ -596,12 +605,7 @@ impl IOMapped for PPU {
             0xFF43 => self.scx = data,
 
             // FF44 - LY - LCDC Y-Coordinate (R)
-            0xFF44 => {
-                // if LCD is disabled, then we reset LY
-                if !get_flag2(&self.lcdc, LCDCBits::LCDEnable as u8) {
-                    self.ly = 0;
-                }
-            },
+            0xFF44 => {},
 
             // FF45 LYC - LY Compare (R/W)
             0xFF45 => {
