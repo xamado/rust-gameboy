@@ -3,7 +3,9 @@ use std::path::PathBuf;
 use std::fs::File;
 use std::io::prelude::*;
 use core::cell::RefCell;
+use closure::closure;
 
+use crate::iomapped::IOMapped;
 use crate::memorybus::MemoryBus;
 use crate::memory::Memory;
 use crate::cpu::CPU;
@@ -21,7 +23,9 @@ pub struct Machine {
     cpu: Rc<RefCell<CPU>>,
     ppu: Rc<RefCell<PPU>>,
     apu: Rc<RefCell<APU>>,
-    ram: Rc<RefCell<Memory>>,
+    ram1: Rc<RefCell<Memory>>,
+    ram2: Rc<RefCell<Memory>>,
+    hram: Rc<RefCell<Memory>>,
     bootrom: Rc<RefCell<BootROM>>,
     rom: Rc<RefCell<ROM>>,
     screen: Rc<RefCell<Screen>>,
@@ -42,7 +46,9 @@ impl Machine {
             rom_filename: String::from(""),
             bootrom: Rc::new(RefCell::new(BootROM::new())),
             rom: Rc::new(RefCell::new(ROM::new())),
-            ram: Rc::new(RefCell::new(Memory::new())),
+            ram1: Rc::new(RefCell::new(Memory::new(0xC000, 0x1000, 1))),
+            ram2: Rc::new(RefCell::new(Memory::new(0xD000, 0x1000, 1))),
+            hram: Rc::new(RefCell::new(Memory::new(0xFF80, 0x7F, 1))),
             bus: bus.clone(),
             joystick: Rc::new(RefCell::new(Joystick::new(Rc::clone(&bus)))),
             screen: screen.clone(),
@@ -54,35 +60,90 @@ impl Machine {
             debugger: None,
         }
     }
-
+ 
     pub fn start(&mut self, skip_bootrom: bool) {
+        let mut bus = self.bus.borrow_mut();
+
         if !skip_bootrom {
             self.bootrom.borrow_mut().open("DMG_ROM.bin");
-            self.bus.borrow_mut().map(0x0000..=0x00FF, self.bootrom.clone());
-        }
-        else {
-            self.cpu.borrow_mut().set_start_pc(0x100);
+            bus.map_range_read(0x0000..=0x00FF, closure!(clone self.bootrom, |addr| bootrom.borrow().read_byte(addr)));
         }
         
-        // TODO: Maybe just map read/write function pointers here?? can they be member funcs?
-        
-        self.bus.borrow_mut().map(0x0000..=0x7FFF, self.rom.clone());  
-        self.bus.borrow_mut().map(0x8000..=0x9FFF, self.ppu.clone());   // VRAM
-        self.bus.borrow_mut().map(0xA000..=0xBFFF, self.rom.clone());   // External RAM
-        self.bus.borrow_mut().map(0xC000..=0xDFFF, self.ram.clone());   // Internal RAM
-        // 0xE000..=0xFDFF Unusable
-        self.bus.borrow_mut().map(0xFE00..=0xFE9F, self.ppu.clone());   // OAM Table
-        // 0XFEA0..=0xFEFF Unusable
-        self.bus.borrow_mut().map(0xFF00..=0xFF00, self.joystick.clone());
-        self.bus.borrow_mut().map(0xFF01..=0xFF02, self.serial.clone());
-        self.bus.borrow_mut().map(0xFF04..=0xFF07, self.timer.clone());
-        self.bus.borrow_mut().map(0xFF0F..=0xFF0F, self.cpu.clone());   // Interrupts
-        self.bus.borrow_mut().map(0xFF10..=0xFF3F, self.apu.clone());
-        self.bus.borrow_mut().map(0xFF40..=0xFF4B, self.ppu.clone());
-        // 0xFF4c..=0xFF7F Unusable
-        self.bus.borrow_mut().map(0xFF80..=0xFFFE, self.ram.clone());   // HIGH RAM
-        self.bus.borrow_mut().map(0xFFFF..=0xFFFF, self.cpu.clone());   // Interrupts
+        // 0000-7FFF - ROM 
+        bus.map_range_read(0x0000..=0x7FFF, closure!(clone self.rom, |addr| rom.borrow().read_byte(addr)));
+        bus.map_range_write(0x0000..=0x7FFF, closure!(clone self.rom, |addr, data| rom.borrow_mut().write_byte(addr, data)));
 
+        // 8000-9FFF - VRAM
+        bus.map_range_read(0x8000..=0x9FFF, closure!(clone self.ppu, |addr| ppu.borrow().read_byte(addr)));
+        bus.map_range_write(0x8000..=0x9FFF, closure!(clone self.ppu, |addr, data| ppu.borrow_mut().write_byte(addr, data)));
+
+        // A000-BFFF - ROM External RAM
+        bus.map_range_read(0xA000..=0xBFFF, closure!(clone self.rom, |addr| rom.borrow().read_byte(addr)));
+        bus.map_range_write(0xA000..=0xBFFF, closure!(clone self.rom, |addr, data| rom.borrow_mut().write_byte(addr, data)));
+
+        // C000-CFFF - WRAM Bank 0
+        bus.map_range_read(0xC000..=0xCFFF, closure!(clone self.ram1, |addr| ram1.borrow().read_byte(addr)));
+        bus.map_range_write(0xC000..=0xCFFF, closure!(clone self.ram1, |addr, data| ram1.borrow_mut().write_byte(addr, data)));
+
+        // D000-DFFF - WRAM Banks 1-7
+        bus.map_range_read(0xD000..=0xDFFF, closure!(clone self.ram2, |addr| ram2.borrow().read_byte(addr)));
+        bus.map_range_write(0xD000..=0xDFFF, closure!(clone self.ram2, |addr, data| ram2.borrow_mut().write_byte(addr, data)));
+
+        // E000-EFFF - "ECHO RAM" WRAM Bank 0 
+        bus.map_range_read(0xE000..=0xEFFF, closure!(clone self.ram1, |addr| ram1.borrow().read_byte(addr - 0xE000 + 0xC000)));
+        bus.map_range_write(0xE000..=0xEFFF, closure!(clone self.ram1, |addr, data| ram1.borrow_mut().write_byte(addr - 0xE000 + 0xC000, data)));
+
+        // F000-FDFF - "ECHO RAM" WRAM Banks 1-7 
+        bus.map_range_read(0xF000..=0xFDFF, closure!(clone self.ram2, |addr| ram2.borrow().read_byte(addr - 0xF000 + 0xD000)));
+        bus.map_range_write(0xF000..=0xFDFF, closure!(clone self.ram2, |addr, data| ram2.borrow_mut().write_byte(addr - 0xF000 + 0xD000, data)));
+
+        // FE00-FE9F - OAM Table
+        bus.map_range_read(0xFE00..=0xFE9F, closure!(clone self.ppu, |addr| ppu.borrow().read_oam_byte(addr - 0xFE00)));
+        bus.map_range_write(0xFE00..=0xFE9F, closure!(clone self.ppu, |addr, data| ppu.borrow_mut().write_oam_byte(addr - 0xFE00, data)));
+
+        // FEA0-FEFF Unusable
+
+        // FF00 - Joystick Register
+        bus.map_address_read(0xFF00, closure!(clone self.joystick, |addr| joystick.borrow().read_byte(addr)));
+        bus.map_address_write(0xFF00, closure!(clone self.joystick, |addr, data| joystick.borrow_mut().write_byte(addr, data)));
+
+        // FF01-FF02 - Serial 
+        bus.map_range_read(0xFF01..=0xFF02, closure!(clone self.serial, |addr| serial.borrow().read_byte(addr)));
+        bus.map_range_write(0xFF01..=0xFF02, closure!(clone self.serial, |addr, data| serial.borrow_mut().write_byte(addr, data)));
+
+        // FF04-FF07 - Timer
+        bus.map_range_read(0xFF04..=0xFF07, closure!(clone self.timer, |addr| timer.borrow().read_byte(addr)));
+        bus.map_range_write(0xFF04..=0xFF07, closure!(clone self.timer, |addr, data| timer.borrow_mut().write_byte(addr, data)));
+
+        // FF0F - Interrupt Enable
+        bus.map_address_read(0xFF0F, closure!(clone self.cpu, |addr| cpu.borrow().read_byte(addr)));
+        bus.map_address_write(0xFF0F, closure!(clone self.cpu, |addr, data| cpu.borrow_mut().write_byte(addr, data)));
+
+        // FF10-FF3F - APU 
+        bus.map_range_read(0xFF10..=0xFF3F, closure!(clone self.apu, |addr| apu.borrow().read_byte(addr)));
+        bus.map_range_write(0xFF10..=0xFF3F, closure!(clone self.apu, |addr, data| apu.borrow_mut().write_byte(addr, data)));
+
+        // FF40-FF4B - PPU Registers
+        bus.map_range_read(0xFF40..=0xFF4B, closure!(clone self.ppu, |addr| ppu.borrow().read_byte(addr)));
+        bus.map_range_write(0xFF40..=0xFF4B, closure!(clone self.ppu, |addr, data| ppu.borrow_mut().write_byte(addr, data)));
+
+        // FF50 - DISABLE BOOTROM
+        bus.map_address_write(0xFF50, closure!(clone self.bus, |_addr, _data| {
+            bus.borrow_mut().unmap_range_read(0x0000..=0x00FF);
+        }));
+
+        // FF80-FFFE - HIGH RAM
+        bus.map_range_read(0xFF80..=0xFFFE, closure!(clone self.hram, |addr| hram.borrow().read_byte(addr)));
+        bus.map_range_write(0xFF80..=0xFFFE, closure!(clone self.hram, |addr, data| hram.borrow_mut().write_byte(addr, data)));
+
+        // FFFF Interrupt Register
+        bus.map_address_read(0xFFFF, closure!(clone self.cpu, |addr| cpu.borrow().read_byte(addr)));
+        bus.map_address_write(0xFFFF, closure!(clone self.cpu, |addr, data| cpu.borrow_mut().write_byte(addr, data)));
+
+        // Advance PC to 0x100 if we are skipping the bootrom
+        if skip_bootrom {
+            self.cpu.borrow_mut().set_start_pc(0x100);
+        }        
     }
 
     pub fn load_rom(&mut self, file: &str) {

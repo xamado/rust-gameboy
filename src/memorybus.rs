@@ -1,25 +1,57 @@
 use std::ops::RangeInclusive;
-use crate::iomapped::IOMappedRef;
+use hashbrown::HashMap;
+
+pub type WriteHandler = Box<dyn Fn(u16, u8)>;
+pub type ReadHandler = Box<dyn Fn(u16) -> u8>;
 
 pub struct MemoryBus {
-    mappings: Vec<(RangeInclusive<u16>, IOMappedRef)>
+    write_addr_mappings: HashMap<u16, WriteHandler>,
+    read_addr_mappings: HashMap<u16, ReadHandler>,
+    write_rng_mappings: Vec<(RangeInclusive<u16>, WriteHandler)>,
+    read_rng_mappings: Vec<(RangeInclusive<u16>, ReadHandler)>,
 }
 
 impl MemoryBus {
     pub fn new() -> Self {
         Self {
-            mappings: vec!(),
+            write_addr_mappings: HashMap::new(),
+            read_addr_mappings: HashMap::new(),
+            write_rng_mappings: vec!(),
+            read_rng_mappings: vec!(),
         }
     }
 
-    pub fn map(&mut self, range: RangeInclusive<u16>, mapped: IOMappedRef) {
-        self.mappings.push((range, mapped));
+    pub fn map_range_write<F: Fn(u16, u8) + 'static>(&mut self, range: RangeInclusive<u16>, f: F) {
+        self.write_rng_mappings.push((range, Box::new(f)));
+    }
+
+    pub fn map_range_read<F: Fn(u16) -> u8 + 'static>(&mut self, range: RangeInclusive<u16>, f: F) {
+        self.read_rng_mappings.push((range, Box::new(f)));
+    }
+
+    pub fn map_address_write<F: Fn(u16, u8) + 'static>(&mut self, addr: u16, f: F) {
+        self.write_addr_mappings.insert(addr, Box::new(f));
+    }
+
+    pub fn map_address_read<F: Fn(u16) -> u8 + 'static>(&mut self, addr: u16, f: F) {
+        self.read_addr_mappings.insert(addr, Box::new(f));
+    }
+
+    pub fn unmap_range_read(&mut self, range: RangeInclusive<u16>) {
+        if let Some(pos) = self.read_rng_mappings.iter().position(|x| (*x).0 == (range)) {
+            let _ = self.read_rng_mappings.remove(pos);
+        }
     }
 
     pub fn read_byte(&self, address: u16) -> u8 {
-        for (r, i) in self.mappings.iter() {
-            if r.contains(&address) {
-                return i.borrow().read_byte(address);
+        if self.read_addr_mappings.contains_key(&address) {
+            return self.read_addr_mappings[&address](address);
+        }
+        else {
+            for (r, i) in self.read_rng_mappings.iter() {
+                if r.contains(&address) {
+                    return i(address);
+                }
             }
         }
 
@@ -33,15 +65,14 @@ impl MemoryBus {
     }
 
     pub fn write_byte(&mut self, address: u16, data: u8) {
-        if address == 0xFF50 {
-            if let Some(pos) = self.mappings.iter().position(|x| (*x).0 == (0x0000..=0x00FF)) {
-                self.mappings.remove(pos);
-            }
+        if self.write_addr_mappings.contains_key(&address) {
+            self.write_addr_mappings[&address](address, data);
         }
-
-        for (r, i) in self.mappings.iter() {
-            if r.contains(&address) {
-                return i.borrow_mut().write_byte(address, data);
+        else {
+            for (r, i) in self.write_rng_mappings.iter() {
+                if r.contains(&address) {
+                    i(address, data);
+                }
             }
         }
     }

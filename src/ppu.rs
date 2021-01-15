@@ -110,6 +110,14 @@ impl PPU {
         }
     }
 
+    pub fn read_oam_byte(&self, addr: u16) -> u8 {
+        self.oam[addr as usize]
+    }
+
+    pub fn write_oam_byte(&mut self, addr: u16, data: u8) {
+        self.oam[addr as usize] = data;
+    }
+
     pub fn tick(&mut self) {
         // HACK: In DMG writing anything to STAT while in HBLANK or VBLANK causes bit 1 of the IF register (0xFF0F) to be set
         // Roadrash and Legend of Zerd depend on this bug
