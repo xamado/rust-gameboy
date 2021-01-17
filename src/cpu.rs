@@ -1,7 +1,7 @@
 use crate::memorybus::MemoryBus;
 use crate::bitutils::*;
 
-use std::collections::HashMap;
+use hashbrown::HashMap;
 use std::rc::Rc;
 use core::cell::RefCell;
 use crate::iomapped::IOMapped;
