@@ -8,17 +8,17 @@ pub struct MBC5 {
     ram_dirty: bool,
     rom_bank: u16,
     ram_bank: u8,
-    num_rom_banks: u8,
-    num_ram_banks: u8
+    num_rom_banks: u16,
+    num_ram_banks: u16
 }
 
 impl MBC5 {
     pub fn new(rom_size: u8, ram_size: u8, data: &[u8]) -> Self {
         // calculate number of rom banks
         let data_size = (0x8000 << rom_size) as usize;
-        let num_rom_banks = ((data_size as u32) / 0x4000) as u8;
+        let num_rom_banks = ((data_size as u32) / 0x4000) as u16;
         
-        // and ram banks
+        // and ram banks 
         let (num_ram_banks, vec_ram_size) = match ram_size {
             0 => (0, 0),
             1 => (1, 0x800),
@@ -80,7 +80,7 @@ impl MBC for MBC5 {
             },
             
             0x3000..=0x3FFF => {
-                self.rom_bank = (data as u16) | (self.rom_bank & 0x00FF);
+                self.rom_bank = (((data & 0x1) as u16) << 8) | (self.rom_bank & 0x00FF);
             },
 
             // RAM bank number / RTC register select
