@@ -671,7 +671,7 @@ impl CPU {
         // if halted and an interrupt is triggered, exit halt even if IME=0 (4 cycles)
         if self.state == CPUState::Halt && masked_interrupts != 0 {
             self.state = CPUState::Normal;
-            cycles += 4;
+            cycles += 1;
         }
 
         // if IME=1 and IF and IE are enabled, do the interrupt dispatch (20 cycles)
@@ -692,7 +692,7 @@ impl CPU {
                 self.execute_interrupt(Interrupts::Joypad);
             }
 
-            cycles += 20;
+            cycles += 5;
         }
 
         // when EI is called, we don't enable interrupts, instead we do this here, after checking
