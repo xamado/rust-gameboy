@@ -15,8 +15,10 @@ use crate::rom::mbc0::MBC0;
 use crate::rom::mbc1::MBC1;
 use crate::rom::mbc3::MBC3;
 use crate::rom::mbc5::MBC5;
+use crate::machine::GameBoyModel;
 
 pub struct ROM {
+    rom_type: GameBoyModel,
     filename: String,
     mbc: Option<Box<dyn MBC>>
 }
@@ -30,6 +32,7 @@ impl Default for ROM {
 impl ROM {
     pub fn new() -> Self {
         Self {
+            rom_type: GameBoyModel::DMG,
             filename: String::new(),
             mbc: None
         }
@@ -39,6 +42,14 @@ impl ROM {
         // open the rom file
         self.filename = filename.to_owned();
         let bytes = std::fs::read(&filename).expect("Failed to open ROM");
+
+        let gbc_mode = bytes[0x143];
+        self.rom_type = match gbc_mode {
+            0x80 | 0xC0 => GameBoyModel::GBC,
+            // 0x80 => GameBoyModel::DMG, // 0x80 is playable on GBC... but we default to DMG mode
+            // 0xC0 => GameBoyModel::GBC,
+            _ => GameBoyModel::DMG
+        };
 
         let cart_type = bytes[0x0147];
         let rom_size = bytes[0x0148];
@@ -74,6 +85,10 @@ impl ROM {
         println!("Loaded ROM {}: {} bytes read. Type: {}.", filename, bytes.len(), cart_type);
     }
 
+    pub fn get_rom_type(&self) -> GameBoyModel {
+        self.rom_type
+    }
+    
     pub fn close(&self) {
         let mut path = PathBuf::from(self.filename.to_owned());
         path.set_extension("sav");

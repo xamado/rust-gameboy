@@ -7,6 +7,7 @@ use crate::screen::Screen;
 use crate::cpu::Interrupts;
 use crate::iomapped::IOMapped;
 use crate::bitutils::*;
+use crate::machine::GameBoyModel;
 
 const MAX_SCANLINES: u8 = 154;
 const VBLANK_LINE: u8 = 144;
@@ -45,18 +46,29 @@ enum PPUMode {
 }
 
 #[derive(Copy, Clone)]
+struct OAMAttributes {
+    priority: bool,
+    flip_y: bool,
+    flip_x: bool,
+    palette: u8,
+    cgb_palette: u8,
+    bank: u8
+}
+
+#[derive(Copy, Clone)]
 struct OAMEntry {
     y: u8,
     x: u8,
     tile: u8,
-    flags: u8
+    flags: OAMAttributes
 }
 
-enum OBJAttributes {
-    Priority = 1 << 7,
-    YFlip = 1 << 6,
-    XFlip = 1 << 5,
-    Palette = 1 << 4
+struct TileAttributes {
+    palette: u8,
+    bank: u8,
+    flip_x: bool,
+    flip_y: bool,
+    priority: bool
 }
 
 pub struct PPUDebugState {
@@ -67,9 +79,11 @@ pub struct PPUDebugState {
 }
 
 pub struct PPU {
+    hardware_model: GameBoyModel,
     bus: Rc<RefCell<MemoryBus>>,
     screen: Rc<RefCell<Screen>>,
-    vram: [u8; 0x2000],
+    vram: [u8; 0x4000],
+    vram_bank: u16,
     oam: [u8; 0x100],
     mode: PPUMode,
     line_cycles: u16,
@@ -84,23 +98,36 @@ pub struct PPU {
     bg_palette: u8,
     obj_palette0: u8,
     obj_palette1: u8,
-    dma_active: bool,
-    dma_source: u8,
+    cgb_bg_palette_index: u8,
+    cgb_bg_palette_autoincrement: bool,
+    cgb_bg_palette_data: [u8; 64],
+    cgb_obj_palette_index: u8,
+    cgb_obj_palette_autoincrement: bool,
+    cgb_obj_palette_data: [u8; 64],
+    dma_oam_active: bool,
+    dma_oam_source: u8,
+    hdma_active: bool,
+    hdma_source: u16,
+    hdma_destination: u16,
+    hdma_mode: u8,
+    hdma_length: u8,
     total_vblank_cycles: u32,
     trigger_stat_quirk: bool,
 }
 
 impl PPU {
-    pub fn new(bus: Rc<RefCell<MemoryBus>>, screen: Rc<RefCell<Screen>>) -> Self {
+    pub fn new(model: GameBoyModel, bus: Rc<RefCell<MemoryBus>>, screen: Rc<RefCell<Screen>>) -> Self {
         Self {
+            hardware_model: model,
             bus,
             screen,
-            vram: [0; 0x2000],
+            vram: [0; 0x4000],
+            vram_bank: 0,
             oam: [0; 0x100],
             mode: PPUMode::ReadOAM,
             line_cycles: 0,
-            lcdc: 0x91,
-            stat: 0x85,
+            lcdc: 0x00,
+            stat: 0x80,
             scy: 0,
             scx: 0,
             ly: 0,
@@ -110,8 +137,19 @@ impl PPU {
             bg_palette: 0xFC,
             obj_palette0: 0xFF,
             obj_palette1: 0xFF,
-            dma_active: false,
-            dma_source: 0,
+            cgb_bg_palette_index: 0,
+            cgb_bg_palette_autoincrement: false,
+            cgb_bg_palette_data: [0xFF; 64],
+            cgb_obj_palette_index: 0,
+            cgb_obj_palette_autoincrement: false,
+            cgb_obj_palette_data: [0xFF; 64],
+            dma_oam_active: false,
+            dma_oam_source: 0,
+            hdma_active: false,
+            hdma_source: 0,
+            hdma_destination: 0,
+            hdma_mode: 0,
+            hdma_length: 0,
             total_vblank_cycles: 0,
             trigger_stat_quirk: false,
         }
@@ -126,6 +164,20 @@ impl PPU {
         }
     }
     
+    pub fn set_vram_bank(&mut self, bank: u8) {
+        match self.hardware_model {
+            GameBoyModel::GBC => self.vram_bank = bank as u16,
+            GameBoyModel::DMG => {}
+        }        
+    }
+
+    pub fn get_vram_bank(&self) -> u8 {
+        match self.hardware_model {
+            GameBoyModel::DMG => 0xFF,
+            GameBoyModel::GBC => 0xFE & ((self.vram_bank as u8) & 0x1)
+        }
+    }
+
     pub fn read_oam_byte(&self, addr: u16) -> u8 {
         self.oam[addr as usize]
     }
@@ -142,14 +194,8 @@ impl PPU {
             self.trigger_stat_quirk = false;
         }
 
-        // in theory dma copy takes a while... in fact:
-        // This copy needs 160 × 4 + 4 clocks to
-        // complete in both double speed and single speeds modes. The copy starts after the 4 setup clocks,
-        // and a new byte is copied every 4 clocks.
-        if self.dma_active {
-            self.do_dma_transfer(self.dma_source);
-            self.dma_active = false;
-        }
+        // Do HDMA or DMA transfers to VRAM/OAM memory
+        self.handle_dma_hdma();
 
         // If LCD is not ENABLED do nothing
         if !get_flag2(&self.lcdc, LCDCBits::LCDEnable as u8) {
@@ -164,14 +210,14 @@ impl PPU {
             // OAM access mode Mode 2
             PPUMode::ReadOAM => { 
                 // wait for 84 cycles, then go to mode VRAM READ MODE
-                if self.line_cycles == 84 {
+                if self.line_cycles == 80 {
                     self.set_mode(PPUMode::ReadVRAM);
                 }
             },
 
             // VRAM ACCESS - Mode 3
             PPUMode::ReadVRAM => {
-                if self.line_cycles == 256 {
+                if self.line_cycles == 252 { // 172 cycles + 80 from mode 2
                     // draw scanline
                     self.render_scanline();
 
@@ -226,12 +272,52 @@ impl PPU {
         }
     }
 
+    fn handle_dma_hdma(&mut self) {
+        // in theory dma copy takes a while... in fact:
+        // This copy needs 160 × 4 + 4 clocks to
+        // complete in both double speed and single speeds modes. The copy starts after the 4 setup clocks,
+        // and a new byte is copied every 4 clocks.
+        if self.dma_oam_active {
+            self.do_dma_transfer(self.dma_oam_source);
+            self.dma_oam_active = false;
+        }
+
+        if self.hdma_active && self.hdma_mode == 0 {
+            while self.hdma_length != 0xFF {
+                self.hdma_copy_block();
+            }
+        }
+    }
+
+    fn hdma_copy_block(&mut self) {
+        if self.mode == PPUMode::ReadVRAM {
+            println!("Warning, HDMA tried to write to VRAM in Mode3");
+        }
+
+        for _ in 0..16 {
+            let b = self.bus.borrow().read_byte(self.hdma_source);
+            self.write_vram(0x8000 + self.hdma_destination, self.vram_bank, b);
+
+            self.hdma_source = self.hdma_source.wrapping_add(1);
+            self.hdma_destination = self.hdma_destination.wrapping_add(1);
+        }
+
+        self.hdma_length = self.hdma_length.wrapping_sub(1);
+
+        if self.hdma_length == 0xFF {
+            self.hdma_active = false;            
+        }
+    }
+
     fn set_mode(&mut self, mode: PPUMode) {
         self.mode = mode;
         self.stat = self.stat & 0x7C | (self.mode as u8);
 
         match self.mode {
             PPUMode::HBlank => {
+                if self.hdma_active && self.hdma_mode == 1 {
+                    self.hdma_copy_block();
+                }
             },
 
             PPUMode::VBlank => {
@@ -323,15 +409,15 @@ impl PPU {
         let w_enabled = (self.lcdc & (LCDCBits::WindowEnable as u8)) != 0;
         let obj_enabled = (self.lcdc & (LCDCBits::OBJDisplayEnable as u8)) != 0;
 
-        let mut bg_buffer: [u8; 160] = [0; 160];
-        let mut obj_buffer: [u8; 160] = [255; 160];
+        let mut bg_buffer: [u16; 160] = [0; 160];
+        let mut bg_attribs: [u8; 160] = [0; 160];
 
         if bg_enabled {
-            self.draw_background(&mut bg_buffer);
+            self.draw_background(&mut bg_buffer, &mut bg_attribs);
         }
 
-        if w_enabled {
-            self.draw_window(&mut bg_buffer);
+        if w_enabled && (self.hardware_model == GameBoyModel::GBC || bg_enabled) {
+            self.draw_window(&mut bg_buffer, &mut bg_attribs);
         }
 
         if obj_enabled {
@@ -346,19 +432,15 @@ impl PPU {
                     continue;
                 }
                 
-                let flip_x = (obj.flags & OBJAttributes::XFlip as u8) != 0;
-                let flip_y = (obj.flags & OBJAttributes::YFlip as u8) != 0;
-                let priority = (obj.flags & OBJAttributes::Priority as u8) != 0;
-                let palette = (obj.flags & OBJAttributes::Palette as u8) != 0;
                 let x = obj.x.wrapping_sub(8);
                 let y = obj.y.wrapping_sub(16);
 
                 let mut row = self.ly.wrapping_sub(y);
-                if flip_y {
+                if obj.flags.flip_y {
                     row = height - row - 1;
                 }
 
-                let obj_tile_data = self.read_tile_data(tile_data_base_address, obj.tile, row as u8);
+                let obj_tile_data = self.read_tile_data(tile_data_base_address, obj.flags.bank, obj.tile, row as u8);
 
                 for p in 0..8 {
                     if x.wrapping_add(p) >= 160 {
@@ -366,38 +448,39 @@ impl PPU {
                     }
                     
                     let idx = x.wrapping_add(p) as usize;
-                    if priority && bg_buffer[idx] != 0 {
+                    if obj.flags.priority && bg_attribs[idx] != 0 {
                         continue;
                     }
 
-                    let colors: u8 = if palette { self.obj_palette1 } else { self.obj_palette0 };
-                    let color_idx = if flip_x { obj_tile_data[TILE_WIDTH as usize - 1 - p as usize] } else { obj_tile_data[p as usize] };
+                    let color_idx = match obj.flags.flip_x {
+                        true => obj_tile_data[TILE_WIDTH as usize - 1 - p as usize],
+                        false => obj_tile_data[p as usize]
+                    };
 
                     if color_idx != 0 {
-                        let color = (colors & (3 << (color_idx * 2))) >> (color_idx * 2);
-                        obj_buffer[idx] = color;
+                        match self.hardware_model {
+                            GameBoyModel::DMG => {
+                                let colors: u8 = if obj.flags.palette == 1 { self.obj_palette1 } else { self.obj_palette0 };
+                                let color = (colors & (3 << (color_idx * 2))) >> (color_idx * 2);
+                                bg_buffer[idx] = color as u16;
+                            }
+
+                            GameBoyModel::GBC => {
+                                let palette_color_idx = (obj.flags.cgb_palette * 8) + (color_idx * 2);
+                                let palette_color: u16 = (self.cgb_obj_palette_data[palette_color_idx as usize] as u16) + ((self.cgb_obj_palette_data[(palette_color_idx + 1) as usize] as u16) << 8);
+
+                                bg_buffer[idx] = palette_color;
+                            }
+                        }
                     }
                 }
             }
         }
 
-        // 
-
-        let mut scanline_buffer: [u8; 160] = [0; 160];
-        for i in 0..160 {
-            if obj_buffer[i] != 255 { // using 255 as a mask
-                scanline_buffer[i] = obj_buffer[i];
-            }
-            else {
-                let bg_color = (self.bg_palette & (3 << (bg_buffer[i] * 2))) >> (bg_buffer[i] * 2);
-                scanline_buffer[i] = bg_color;
-            }
-        }
-
-        self.screen.borrow_mut().set_scanline(self.ly as u8, &scanline_buffer);
+        self.screen.borrow_mut().set_scanline(self.ly as u8, &bg_buffer);
     }
     
-    fn draw_background(&self, scanline_buffer: &mut [u8; 160]) {
+    fn draw_background(&self, color_buffer: &mut [u16; 160], bg_attribs: &mut [u8; 160]) {
         let start_tile_row: u8 = ((self.scy as u16 + self.ly as u16) / (TILE_HEIGHT as u16)) as u8;
         let start_tile_col: u8 = self.scx / TILE_WIDTH;
         let end_tile_col: u8 = start_tile_col + 21;
@@ -415,18 +498,52 @@ impl PPU {
         for x in start_tile_col..end_tile_col {
             // read tile number from tile map
             let tile_address = bg_tile_map_address + (((TILES_PER_ROW as u16 * (start_tile_row % TILES_PER_ROW) as u16) + (x % TILES_PER_COL) as u16) as u16);
-            let tile_number: u8 = self.vram[(tile_address - 0x8000) as usize];
+            let tile_number: u8 = self.read_vram(tile_address, 0);
+
+            // read tile attributes
+            let tile_attribs = self.read_tile_attribs(tile_address);
 
             // read tile data
             let tile_index: u8 = if addressing_mode != 0 { tile_number } else { ((tile_number as i16) + 128) as u8 };
-            let tile_row_data = self.read_tile_data(tile_data_base_address, tile_index, pixel_row as u8);
+            let tile_row_data = match self.hardware_model {
+                GameBoyModel::DMG => {
+                    self.read_tile_data(tile_data_base_address, 0, tile_index, pixel_row as u8)
+                }
+                GameBoyModel::GBC => {                   
+                    if tile_attribs.flip_y {
+                        self.read_tile_data(tile_data_base_address, tile_attribs.bank, tile_index, 7 - pixel_row as u8)
+                    }
+                    else {
+                        self.read_tile_data(tile_data_base_address, tile_attribs.bank, tile_index, pixel_row as u8)
+                    }
+                }
+            };
 
             let mut pixel_col = x as u16 * TILE_WIDTH as u16;
             
             for i in 0..TILE_WIDTH {
                 if pixel_col >= scx && pixel_col <= scx + 160 && pixel_idx < 160 {
-                    let color_idx = tile_row_data[i as usize] & 0x03;
-                    scanline_buffer[pixel_idx] = color_idx;
+                    let color_idx = match tile_attribs.flip_x {
+                        false => tile_row_data[i as usize] & 0x03,
+                        true => tile_row_data[7 - i as usize] & 0x03
+                    };
+
+                    match self.hardware_model {
+                        GameBoyModel::DMG => {
+                            let bg_color = (self.bg_palette & (3 << (color_idx * 2))) >> (color_idx * 2);
+                            color_buffer[pixel_idx] = bg_color as u16;
+                            bg_attribs[pixel_idx] = color_idx;
+                        }
+
+                        GameBoyModel::GBC => {
+                            let palette_color_idx = (tile_attribs.palette * 8) + (color_idx * 2);
+                            let palette_color: u16 = (self.cgb_bg_palette_data[palette_color_idx as usize] as u16) + ((self.cgb_bg_palette_data[(palette_color_idx + 1) as usize] as u16) << 8);
+
+                            color_buffer[pixel_idx] = palette_color;
+                            bg_attribs[pixel_idx] = color_idx;
+                        }
+                    }
+
                     pixel_idx += 1;
                 }
                 
@@ -439,7 +556,7 @@ impl PPU {
         }
     }
 
-    fn draw_window(&self, scanline_buffer: &mut [u8; 160]) {
+    fn draw_window(&self, color_buffer: &mut [u16; 160], bg_attribs: &mut [u8; 160]) {
         let window_select = self.lcdc & (LCDCBits::WindowTilemapDisplaySelect as u8);
         let window_tile_map_address: u16 = if (window_select) != 0 { 0x9C00 } else { 0x9800 };
 
@@ -456,16 +573,35 @@ impl PPU {
             for x in 0..=20 {
                 // read tile number from tile map
                 let tile_address = window_tile_map_address + (((TILES_PER_ROW as u16 * (start_tile_row % TILES_PER_ROW) as u16) + (x % TILES_PER_COL) as u16) as u16);
-                let tile_number: u8 = self.vram[(tile_address - 0x8000) as usize];
+                let tile_number: u8 = self.read_vram(tile_address, 0);
 
+                // read tile attributes
+                let tile_attribs = self.read_tile_attribs(tile_address);
+                
                 // read tile data
                 let tile_index: u8 = if addressing_mode != 0 { tile_number } else { ((tile_number as i16) + 128) as u8 };
-                let tile_row_data = self.read_tile_data(tile_data_base_address, tile_index, pixel_row as u8);
+                let tile_row_data = self.read_tile_data(tile_data_base_address, tile_attribs.bank, tile_index, pixel_row as u8);
 
                 for i in 0..TILE_WIDTH {
                     if pixel_col < 160 {
                         let color_idx = tile_row_data[i as usize] & 0x03;
-                        scanline_buffer[pixel_col as usize] = color_idx;
+
+                        match self.hardware_model {
+                            GameBoyModel::DMG => {
+                                let bg_color = (self.bg_palette & (3 << (color_idx * 2))) >> (color_idx * 2);
+                                color_buffer[pixel_col as usize] = bg_color as u16;
+                                bg_attribs[pixel_col as usize] = color_idx;
+                            }
+    
+                            GameBoyModel::GBC => {
+                                let palette_color_idx = (tile_attribs.palette * 8) + (color_idx * 2);
+    
+                                let palette_color: u16 = (self.cgb_bg_palette_data[palette_color_idx as usize] as u16) + ((self.cgb_bg_palette_data[(palette_color_idx + 1) as usize] as u16) << 8);
+    
+                                color_buffer[pixel_col as usize] = palette_color;
+                                bg_attribs[pixel_col as usize] = color_idx;
+                            }
+                        }
                     }
 
                     pixel_col = pixel_col.wrapping_add(1);
@@ -478,14 +614,29 @@ impl PPU {
         }
     }
 
-    fn read_tile_data(&self, base_address: u16, tile_number: u8, row: u8) -> [u8; 8] {
+    fn read_tile_attribs(&self, tile_address: u16) -> TileAttributes {
+        let tile_attribs: u8 = match self.hardware_model {
+            GameBoyModel::DMG => 0,
+            GameBoyModel::GBC => self.read_vram(tile_address, 1)
+        };
+
+        TileAttributes {
+            palette: tile_attribs & 0x7,
+            bank: get_bit(tile_attribs, 3),
+            flip_x: get_bit(tile_attribs, 5) != 0,
+            flip_y: get_bit(tile_attribs, 6) != 0,
+            priority: get_bit(tile_attribs, 7) != 0
+        }
+    }
+
+    fn read_tile_data(&self, base_address: u16, bank: u8, tile_number: u8, row: u8) -> [u8; 8] {
         let tile_address = base_address + (tile_number as u16 * TILE_SIZE as u16);
 
         let offset: u16 = row as u16 * 2;
         let mut tile_row: [u8; 8] = [0; 8];
         
-        let lsb = self.vram[(tile_address - 0x8000 + offset) as usize];
-        let msb = self.vram[(tile_address - 0x8000 + offset + 1) as usize];
+        let lsb = self.read_vram(tile_address + offset, bank as u16);
+        let msb = self.read_vram(tile_address + offset + 1, bank as u16);
 
         for bit in (0..TILE_WIDTH).rev() {
             let mask: u8 = 1 << bit;
@@ -498,11 +649,23 @@ impl PPU {
     }
 
     fn read_oam_entry(&self, idx: u8) -> OAMEntry {
+        let y = self.oam[(idx as u16 * 4) as usize];
+        let x = self.oam[(idx  as u16 * 4 + 1) as usize];
+        let tile = self.oam[(idx as u16 * 4 + 2) as usize];
+        let flags = self.oam[(idx as u16 * 4 + 3) as usize];
+
         OAMEntry {
-            y: self.oam[(idx as u16 * 4) as usize],
-            x: self.oam[(idx  as u16 * 4 + 1) as usize],
-            tile: self.oam[(idx as u16 * 4 + 2) as usize],
-            flags: self.oam[(idx as u16 * 4 + 3) as usize]
+            y,
+            x,
+            tile, 
+            flags: OAMAttributes {
+                priority: flags & (1 << 7) != 0,
+                flip_y: flags & (1 << 6) != 0,
+                flip_x: flags & (1 << 5) != 0,
+                palette: get_bit(flags, 4),
+                bank: get_bit(flags, 3),
+                cgb_palette: flags & 0x07,
+            }
         }
     }
 
@@ -510,14 +673,21 @@ impl PPU {
         let addr: u16 = (data as u16) << 8;
         let mut data: [u8; 0xA0] = [0; 0xA0];
         
-        let bus = self.bus.borrow();
         for (i, datum) in data.iter_mut().enumerate() {
-            *datum = bus.read_byte(addr + (i as u16));
+            *datum = self.read_byte(addr + (i as u16));
         }
 
         for (i, datum) in data.iter().enumerate() {
             self.oam[i as usize] = *datum;
         }
+    }
+
+    fn read_vram(&self, addr: u16, bank: u16) -> u8 {
+        self.vram[(addr - 0x8000 + bank * 0x2000) as usize]
+    }
+
+    fn write_vram(&mut self, addr: u16, bank: u16, data: u8) {
+        self.vram[(addr - 0x8000 + bank * 0x2000) as usize] = data;
     }
 }
 
@@ -525,20 +695,24 @@ impl IOMapped for PPU {
     fn read_byte(&self, address: u16) -> u8 {
         match address {
             0x8000..=0x9FFF => {
-                if self.mode == PPUMode::ReadVRAM {
-                    0xFF
+                if self.mode != PPUMode::ReadVRAM {
+                    self.read_vram(address, self.vram_bank)
                 }
                 else {
-                    self.vram[(address - 0x8000) as usize]
+                    println!("VRAM Invalid Read when in Mode3: VRAM{}:{:#06x}", self.vram_bank, address);
+                    self.read_vram(address, self.vram_bank) // THIS SHOULDNT BE DONE, WE SHOULD RETURN 0xFF
+                    // 0xFF
                 }
             },
 
             0xFE00..=0xFE9F => {
-                if self.mode == PPUMode::ReadVRAM || self.mode == PPUMode::ReadOAM {
-                    0xFF
+                if self.mode != PPUMode::ReadVRAM && self.mode != PPUMode::ReadOAM {
+                    self.oam[(address - 0xFE00) as usize]
                 }
                 else {
+                    println!("OAM Invalid Read when in Mode3: OAM:{:#06x}", address);
                     self.oam[(address - 0xFE00) as usize]
+                    //     0xFF
                 }
             },
 
@@ -549,7 +723,7 @@ impl IOMapped for PPU {
             0xFF41 => {
                 if !get_flag2(&self.lcdc, LCDCBits::LCDEnable as u8) {
                     // disable bits 0-2 if LCD is off
-                    (0x80 | self.stat) & !0x3
+                    (0x80 | self.stat) & !0x7
                 }
                 else {
                     0x80 | self.stat
@@ -570,7 +744,7 @@ impl IOMapped for PPU {
             // FF45 LYC - LY Compare (R/W)
             0xFF45 => self.lyc,
 
-            // FF46 - DMA - DMA Transfer and Start Address (W)
+            // FF46 - OAM DMA - OAM DMA Transfer and Start Address (W)
             0xFF46 => 0,
 
             // FF47 - BGP - BG Palette Data (R/W)
@@ -588,21 +762,58 @@ impl IOMapped for PPU {
             // FF4B WX - Window X Position minus 7 (R/W)
             0xFF4B => self.wpx,
             
-            _ => 0
+            // FF51 HDMA1 - DMA Source, High
+            // FF52 HDMA2 - DMA Source, Low
+            // FF53 HDMA3 - DMA Destination, High
+            // FF54 HDMA4 - DMA Destination, Low
+            0xFF51 | 0xFF52 | 0xFF53 | 0xFF54 => 0xFF,
+
+            // FF55 HDMA5 - DMA Length/Mode/Start
+            // 0xFF55 => (((!self.hdma_active) as u8) << 7) | self.hdma_length & 0x7F,
+            0xFF55 => self.hdma_length,
+            
+            // FF68 BCPS/BGPI - Background Palette Index (CGB)
+            0xFF68 => {
+                ((self.cgb_bg_palette_autoincrement as u8) << 7) | self.cgb_bg_palette_index
+            },
+
+            // FF69 BCPD/BGPD - Background Palette Data (CGB)
+            0xFF69 => {
+                if self.mode != PPUMode::ReadVRAM {
+                    self.cgb_bg_palette_data[self.cgb_bg_palette_index as usize]
+                } 
+                else {
+                    0
+                }
+            },
+            
+            _ => self.bus.borrow().read_byte(address)
         }
     }
 
     fn write_byte(&mut self, address: u16, data: u8) {
         match address {
             0x8000..=0x9FFF => {
-                if self.mode != PPUMode::ReadVRAM {
-                    self.vram[(address - 0x8000) as usize] = data;
+                let lcd_enabled = get_flag2(&self.lcdc, LCDCBits::LCDEnable as u8);
+
+                if !lcd_enabled || self.mode != PPUMode::ReadVRAM {
+                    self.write_vram(address, self.vram_bank, data);
+                }
+                else {
+                    println!("VRAM Invalid Write when in Mode3: VRAM{}:{:#06x}", self.vram_bank, address);
+                    self.write_vram(address, self.vram_bank, data); // THIS SHOULDNT BE DONE
                 }
             },
 
             0xFE00..=0xFE9F => {
-                if self.mode != PPUMode::ReadVRAM && self.mode != PPUMode::ReadOAM {
+                let lcd_enabled = get_flag2(&self.lcdc, LCDCBits::LCDEnable as u8);
+
+                if !lcd_enabled || (self.mode != PPUMode::ReadVRAM && self.mode != PPUMode::ReadOAM) {
                     self.oam[(address - 0xFE00) as usize] = data;
+                }
+                else {
+                    println!("OAM Invalid Write when in Mode{}: OAM:{:#06x}", self.mode as u8, address);
+                    self.oam[(address - 0xFE00) as usize] = data; // THIS SHOULDNT BE DONE
                 }
             }
 
@@ -622,7 +833,7 @@ impl IOMapped for PPU {
 
             // FF41 STAT - LCDC Status (R/W)
             0xFF41 => {
-                self.stat = data & !0x7 | self.stat & 0x7;
+                self.stat = 0x80 | (data & !0x7 | self.stat & 0x7);
 
                 if self.mode == PPUMode::HBlank || self.mode == PPUMode::VBlank {
                     self.trigger_stat_quirk = true;
@@ -643,11 +854,10 @@ impl IOMapped for PPU {
                 self.lyc = data;
             },
 
-            // FF46 - DMA - DMA Transfer and Start Address (W)
+            // FF46 - OAM DMA - OAM DMA Transfer and Start Address (W)
             0xFF46 => {
-                // self.do_dma_transfer(data);
-                self.dma_active = true;
-                self.dma_source = data;
+                self.dma_oam_active = true;
+                self.dma_oam_source = data;
             },
 
             // FF47 - BGP - BG Palette Data (R/W)
@@ -664,8 +874,78 @@ impl IOMapped for PPU {
 
             // FF4B WX - Window X Position minus 7 (R/W)
             0xFF4B => self.wpx = data,
-            
-            _ => println!("PPU Invalid Write")
+
+            // FF51 HDMA1 - DMA Source, High
+            0xFF51 => self.hdma_source = (((data as u16) << 8) | (self.hdma_source & 0xFF)) & !0xF,
+
+            // FF52 HDMA2 - DMA Source, Low
+            0xFF52 => self.hdma_source = ((self.hdma_source & 0xFF00) | (data as u16)) & !0xF,
+
+            // FF53 HDMA3 - DMA Destination, High
+            0xFF53 => self.hdma_destination = (((data as u16) << 8) | (self.hdma_destination & 0xFF)) & 0x1FF0,
+
+            // FF54 HDMA4 - DMA Destination, Low
+            0xFF54 => self.hdma_destination = ((self.hdma_destination & 0xFF00) | (data as u16)) & 0x1FF0,
+
+            // FF55 HDMA5 - DMA Length/Mode/Start
+            0xFF55 => {
+                if self.hdma_active {
+                    if get_bit(data, 7) == 0 {
+                        self.hdma_active = false;
+                        self.hdma_mode = 1;
+                    }
+                    self.hdma_length = data & 0x7F;
+                }
+                else {
+                    self.hdma_active = true;
+
+                    self.hdma_mode = get_bit(data, 7);
+                    self.hdma_length = data & 0x7F;
+                }
+            }
+
+            // FF68 BCPS/BGPI - Background Palette Index (CGB)
+            0xFF68 => {
+                self.cgb_bg_palette_index = data & 0x1F;
+                self.cgb_bg_palette_autoincrement = data & 0x80 != 0;
+            },
+
+            // FF69 BCPD/BGPD - Background Palette Data (CGB)
+            0xFF69 => {
+                // if self.mode != PPUMode::ReadVRAM {
+                    self.cgb_bg_palette_data[self.cgb_bg_palette_index as usize] = data;
+
+                    if self.cgb_bg_palette_autoincrement {
+                        self.cgb_bg_palette_index += 1;
+                        self.cgb_bg_palette_index %= 64;
+                    }
+                // } 
+                // else {
+                //     println!("Palette write in VRAM mode");
+                // }
+            },
+
+            // FF6A OCPS/OBPI - Object Palette Index (CGB)
+            0xFF6A => {
+                self.cgb_obj_palette_index = data & 0x1F;
+                self.cgb_obj_palette_autoincrement = data & 0x80 != 0;
+            },
+
+            // FF6B OCPD/OBPD - Object Palette Data (CGB)
+            0xFF6B => {
+                // if self.mode != PPUMode::ReadVRAM {
+                    self.cgb_obj_palette_data[self.cgb_obj_palette_index as usize] = data;
+
+                    if self.cgb_obj_palette_autoincrement {
+                        self.cgb_obj_palette_index += 1;
+                    }
+                // } 
+                // else {
+                //     println!("Palette write in VRAM mode");
+                // }
+            },
+
+            _ => self.bus.borrow().write_byte(address, data)
         }
     }
 }

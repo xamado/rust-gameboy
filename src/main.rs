@@ -34,15 +34,6 @@ const BUFFER_HEIGHT: u32 = 144;
 const WINDOW_WIDTH: u32 = BUFFER_WIDTH * 4;
 const WINDOW_HEIGHT: u32 = BUFFER_HEIGHT * 4;
 
-const SCREEN_COLORS: [Color; 4] = [
-    Color { r: 255, g: 255, b: 255 },
-    Color { r: 126, g: 126, b: 126 },
-    Color { r: 63, g: 63, b: 63 },
-    Color { r: 0, g: 0, b: 0 }
-];
-
-// const BOX_SIZE: i16 = 64;
-
 #[derive(Debug, Copy, Clone)]
 struct Color {
     r: u8,
@@ -247,11 +238,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let fb = screen.get_framebuffer();
             let frame = pixels.get_frame();
             for (i, pixel) in frame.chunks_exact_mut(4).enumerate() {
-                let fb_idx = fb[i] as usize;
-                let c = SCREEN_COLORS[fb_idx];
-                pixel[0] = c.r;
-                pixel[1] = c.g;
-                pixel[2] = c.b;
+                let c = fb[i];
+                pixel[0] = (c & 0xFF) as u8;
+                pixel[1] = ((c >> 8) & 0xFF) as u8;
+                pixel[2] = ((c >> 16) & 0xFF) as u8;
                 pixel[3] = 255;
             }
 

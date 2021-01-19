@@ -16,7 +16,14 @@ use crate::timer::Timer;
 use crate::serial::Serial;
 use crate::debugger::Debugger;
 
+#[derive(Clone, Copy, PartialEq)]
+pub enum GameBoyModel {
+    DMG,
+    GBC
+}
+
 pub struct Machine {
+    model: GameBoyModel,
     cpu: Rc<RefCell<CPU>>,
     ppu: Rc<RefCell<PPU>>,
     apu: Rc<RefCell<APU>>,
@@ -31,26 +38,32 @@ pub struct Machine {
     timer: Rc<RefCell<Timer>>,
     serial: Rc<RefCell<Serial>>,
     debugger: Option<Box<Debugger>>,
-    rom_filename: String,
 }
 
 impl Machine {
     pub fn new(rom: ROM) -> Self {
+        let model = rom.get_rom_type();
+
         let bus = Rc::new(RefCell::new(MemoryBus::new()));
-        let screen = Rc::new(RefCell::new(Screen::new()));
+        let screen = Rc::new(RefCell::new(Screen::new(model)));
+
+        let ram2 = match model {
+            GameBoyModel::DMG => Rc::new(RefCell::new(Memory::new(0xD000, 0x1000, 1))),
+            GameBoyModel::GBC => Rc::new(RefCell::new(Memory::new(0xD000, 0x7000, 7))),
+        };
 
         Self {
-            rom_filename: String::from(""),
+            model,
             bootrom: Rc::new(RefCell::new(BootROM::new())),
             rom: Rc::new(RefCell::new(rom)),
             ram1: Rc::new(RefCell::new(Memory::new(0xC000, 0x1000, 1))),
-            ram2: Rc::new(RefCell::new(Memory::new(0xD000, 0x1000, 1))),
+            ram2,
             hram: Rc::new(RefCell::new(Memory::new(0xFF80, 0x7F, 1))),
             bus: bus.clone(),
             joystick: Rc::new(RefCell::new(Joystick::new(Rc::clone(&bus)))),
             screen: screen.clone(),
             cpu: Rc::new(RefCell::new(CPU::new(Rc::clone(&bus)))),
-            ppu: Rc::new(RefCell::new(PPU::new(Rc::clone(&bus), screen))),
+            ppu: Rc::new(RefCell::new(PPU::new(model, Rc::clone(&bus), screen))),
             apu: Rc::new(RefCell::new(APU::new())),
             timer: Rc::new(RefCell::new(Timer::new(Rc::clone(&bus)))),
             serial: Rc::new(RefCell::new(Serial::new())),
@@ -59,11 +72,20 @@ impl Machine {
     }
  
     pub fn start(&mut self, skip_bootrom: bool) {
-        let mut bus = self.bus.borrow_mut();
+        let bus = self.bus.borrow();
 
         if !skip_bootrom {
-            self.bootrom.borrow_mut().open("DMG_ROM.bin");
-            bus.map_range_read(0x0000..=0x00FF, closure!(clone self.bootrom, |addr| bootrom.borrow().read_byte(addr)));
+            match self.model {
+                GameBoyModel::DMG => {
+                    self.bootrom.borrow_mut().open("DMG_ROM.bin");
+                    bus.map_range_read(0x0000..=0x00FF, closure!(clone self.bootrom, |addr| bootrom.borrow().read_byte(addr)));
+                }
+                GameBoyModel::GBC => {
+                    self.bootrom.borrow_mut().open("CGB_ROM.bin");
+                    bus.map_range_read(0x0000..=0x00FF, closure!(clone self.bootrom, |addr| bootrom.borrow().read_byte(addr)));
+                    bus.map_range_read(0x0200..=0x08FF, closure!(clone self.bootrom, |addr| bootrom.borrow().read_byte(addr)));
+                }
+            }           
         }
         
         // 0000-7FFF - ROM 
@@ -124,11 +146,54 @@ impl Machine {
         bus.map_range_read(0xFF40..=0xFF4B, closure!(clone self.ppu, |addr| ppu.borrow().read_byte(addr)));
         bus.map_range_write(0xFF40..=0xFF4B, closure!(clone self.ppu, |addr, data| ppu.borrow_mut().write_byte(addr, data)));
 
+        // FF4F - VRAM Bank Register
+        if let GameBoyModel::GBC = self.model {
+            bus.map_address_read(0xFF4F, closure!(clone self.ppu, |_addr| ppu.borrow().get_vram_bank()));
+            bus.map_address_write(0xFF4F, closure!(clone self.ppu, |_addr, data| ppu.borrow_mut().set_vram_bank(data & 0x1)));
+        }
+
         // FF50 - DISABLE BOOTROM
         bus.map_address_write(0xFF50, closure!(clone self.bus, |_addr, _data| {
-            bus.borrow_mut().unmap_range_read(0x0000..=0x00FF);
+            bus.borrow().unmap_range_read(0x0000..=0x00FF);
+            bus.borrow().unmap_range_read(0x0200..=0x08FF);
         }));
 
+        // FF51-FF55 - HDMA Transfer (GBC)
+        match self.model {
+            GameBoyModel::GBC => {
+                bus.map_range_write(0xFF51..=0xFF55, closure!(clone self.ppu, |addr, data| {
+                    ppu.borrow_mut().write_byte(addr, data);
+                }));
+        
+                bus.map_range_read(0xFF51..=0xFF55, closure!(clone self.ppu, |addr| {
+                    ppu.borrow().read_byte(addr)
+                }));
+            },
+            _ => {
+                bus.map_range_read(0xFF51..=0xFF55, closure!(clone self.ppu, |_addr| {
+                    0xFF
+                }));
+            }
+        }
+
+        // FF68 - FF6A - Palette Data
+        if let GameBoyModel::GBC = self.model {
+            bus.map_range_write(0xFF68..=0xFF6B, closure!(clone self.ppu, |addr, data| ppu.borrow_mut().write_byte(addr, data)));
+            bus.map_range_read(0xFF68..=0xFF6B, closure!(clone self.ppu, |addr| ppu.borrow().read_byte(addr)));
+        };
+
+        // FF70 - WRAM Bank Switch Register
+        if let GameBoyModel::GBC = self.model {
+            bus.map_address_write(0xFF70, closure!(clone self.ram2, |_addr, data| {
+                ram2.borrow_mut().ff70 = data & 0x7;
+
+                let bank = if (data & 0x7) != 0 { (data & 0x7) - 1 } else { 0 };
+                ram2.borrow_mut().switch_bank(bank);
+            }));
+
+            bus.map_address_read(0xFF70, closure!(clone self.ram2, |_addr| (0xF8 | ram2.borrow().ff70)));
+        }
+        
         // FF80-FFFE - HIGH RAM
         bus.map_range_read(0xFF80..=0xFFFE, closure!(clone self.hram, |addr| hram.borrow().read_byte(addr)));
         bus.map_range_write(0xFF80..=0xFFFE, closure!(clone self.hram, |addr, data| hram.borrow_mut().write_byte(addr, data)));
