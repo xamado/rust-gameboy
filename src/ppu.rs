@@ -225,7 +225,7 @@ impl PPU {
         match self.mode {
             // OAM access mode Mode 2
             PPUMode::ReadOAM => { 
-                // wait for 84 cycles, then go to mode VRAM READ MODE
+                // wait for 80 cycles, then go to mode VRAM READ MODE
                 if self.line_cycles == 80 {
                     self.set_mode(PPUMode::ReadVRAM);
                 }
@@ -241,7 +241,7 @@ impl PPU {
                 }
                 
                 // HBlank STAT interrupt happens 1 cycle before mode switch
-                else if self.line_cycles == 252 && self.stat & (STATBits::Mode0HBlankCheckEnable as u8) != 0 {
+                else if self.line_cycles == 248 && self.stat & (STATBits::Mode0HBlankCheckEnable as u8) != 0 {
                     self.raise_interrupt(Interrupts::LCDStat);
                 }
             },
@@ -383,6 +383,7 @@ impl PPU {
         self.ly = 0;
         self.line_cycles = 0;
         self.mode = PPUMode::HBlank;
+        self.stat = self.stat & 0x7C | (self.mode as u8);
     }
 
     fn enable_lcd(&mut self) {
