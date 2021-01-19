@@ -668,13 +668,13 @@ impl CPU {
 
         let masked_interrupts = self.irq_e & self.irq_f & 0x1F;
 
-        // if halted and an interrupt is triggered, exit halt even if IME=0 (4 cycles)
+        // if halted and an interrupt is triggered, exit halt even if IME=0 (4 clocks)
         if self.state == CPUState::Halt && masked_interrupts != 0 {
             self.state = CPUState::Normal;
             cycles += 1;
         }
 
-        // if IME=1 and IF and IE are enabled, do the interrupt dispatch (20 cycles)
+        // if IME=1 and IF and IE are enabled, do the interrupt dispatch (20 clocks)
         if self.interrupts_enabled && masked_interrupts != 0 {
             if (1 << Interrupts::VBlank as u8) & masked_interrupts != 0 {
                 self.execute_interrupt(Interrupts::VBlank);
@@ -4207,7 +4207,7 @@ impl IOMapped for CPU {
         match address {
             0xFFFF => self.irq_e = data,
             0xFF0F => self.irq_f = data,
-            _ => self.bus.borrow_mut().write_byte(address, data)
+            _ => self.bus.borrow().write_byte(address, data)
         }
     }
 }

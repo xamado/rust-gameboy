@@ -52,7 +52,7 @@ impl Timer {
 
                 // raise the Timer interrupt
                 let iif = self.bus.borrow().read_byte(0xFF0F) | (1 << Interrupts::Timer as u8);
-                self.bus.borrow_mut().write_byte(0xFF0F, iif);
+                self.bus.borrow().write_byte(0xFF0F, iif);
 
                 self.timer_overflow = false;
                 self.timer_overflow_counter = 0;

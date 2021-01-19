@@ -41,7 +41,7 @@ impl Joystick {
 
         // raise the joypad interrupt
         let iif = self.bus.borrow().read_byte(0xFF0F) | (1 << Interrupts::Joypad as u8);
-        self.bus.borrow_mut().write_byte(0xFF0F, iif);
+        self.bus.borrow().write_byte(0xFF0F, iif);
     }
 }
 

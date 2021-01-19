@@ -214,29 +214,27 @@ impl PPU {
         self.mode = mode;
         self.stat = self.stat & 0x7C | (self.mode as u8);
 
-        let mut iif = self.bus.borrow().read_byte(0xFF0F);
-
         match self.mode {
             PPUMode::HBlank => {
             },
 
             PPUMode::VBlank => {
                 // raise the VBlank interrupt
-                iif |= 1 << Interrupts::VBlank as u8;
+                self.raise_interrupt(Interrupts::VBlank);
 
                 if self.stat & (STATBits::Mode1VBlankCheckEnable as u8) != 0 {
-                    iif |= 1 << Interrupts::LCDStat as u8;
+                    self.raise_interrupt(Interrupts::LCDStat);
                 }
 
                 // vbl stat also triggers with oam check
                 if self.stat & (STATBits::Mode2OAMCheckEnable as u8) != 0 {
-                    iif |= 1 << Interrupts::LCDStat as u8;
+                    self.raise_interrupt(Interrupts::LCDStat);
                 }
             },
 
             PPUMode::ReadOAM => {
                 if self.stat & (STATBits::Mode2OAMCheckEnable as u8) != 0 {
-                    iif |= 1 << Interrupts::LCDStat as u8;
+                    self.raise_interrupt(Interrupts::LCDStat);
                 }
             }
 
@@ -244,8 +242,6 @@ impl PPU {
 
             }
         }
-        
-        self.bus.borrow_mut().write_byte(0xFF0F, iif);
     }
 
     fn check_lyc_compare(&mut self) {
@@ -262,7 +258,7 @@ impl PPU {
     fn raise_interrupt(&self, interrupt: Interrupts) {
         let mut iif = self.bus.borrow().read_byte(0xFF0F);
         iif |= 1 << interrupt as u8;
-        self.bus.borrow_mut().write_byte(0xFF0F, iif);
+        self.bus.borrow().write_byte(0xFF0F, iif);
     }
 
     fn disable_lcd(&mut self) {
