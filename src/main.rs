@@ -52,35 +52,8 @@ struct Color {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
 
-    let cli_matches = App::new("rust-gameboy")
-        .version("0.1")
-        .author("Xavier Amado <xamado@gmail.com")
-        .about("GB emulator written in Rust")
-        .arg(Arg::with_name("rom")
-            .long("rom")
-            .help("Specify rom to load")
-            .required(true)
-            .takes_value(true)
-        )
-        .arg(Arg::with_name("no-bootrom")
-            .long("no-bootrom")
-            .help("Avoid the bootrom and just start ROM directly")
-            .takes_value(false)
-        )
-        .arg(Arg::with_name("breakpoints")
-            .long("breakpoints")
-            .short("bp")
-            .help("Comma separated list of breakpoint addresses")
-            .takes_value(true)
-        )
-        .arg(Arg::with_name("watchpoints")
-            .long("watchpoints")
-            .short("wp")
-            .help("Comma separated list of memory addresses to watch")
-            .takes_value(true)
-        )
-        .get_matches();
-
+    // Parse CLI args
+    let cli_matches = get_cli_matches();
     let opt_rom_file = cli_matches.value_of("rom").unwrap();
     let opt_no_bootrom = cli_matches.occurrences_of("no-bootrom") > 0;
     let opt_breakpoints = cli_matches.value_of("breakpoints").unwrap_or("");
@@ -250,48 +223,54 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if screen.is_vblank() {
                 break 'emulator_loop;
             }    
+
+            if machine.is_stopped() {
+                break 'emulator_loop;
+            }
         }
 
-        // Queue audio samples first
-        let audio_buffer = machine.get_audio_buffer();
-        let len = audio_buffer.len();
-        let s = bytemuck::cast_slice(&audio_buffer[0..len]);
-
-        if let Err(e) = queue.queue_audio(&s) {
-            println!("Error queing audio: {:?}", e);
-        }
-
-        // Update pixels' framebuffer
         let mut screen = machine.get_screen().borrow_mut();
-        let fb = screen.get_framebuffer();
-        let frame = pixels.get_frame();
-        for (i, pixel) in frame.chunks_exact_mut(4).enumerate() {
-            let fb_idx = fb[i] as usize;
-            let c = SCREEN_COLORS[fb_idx];
-            pixel[0] = c.r;
-            pixel[1] = c.g;
-            pixel[2] = c.b;
-            pixel[3] = 255;
+        if screen.is_vblank() {
+            // Queue audio samples first
+            let audio_buffer = machine.get_audio_buffer();
+            let len = audio_buffer.len();
+            let s = bytemuck::cast_slice(&audio_buffer[0..len]);
+
+            if let Err(e) = queue.queue_audio(&s) {
+                println!("Error queing audio: {:?}", e);
+            }
+
+            // Update pixels' framebuffer
+            let fb = screen.get_framebuffer();
+            let frame = pixels.get_frame();
+            for (i, pixel) in frame.chunks_exact_mut(4).enumerate() {
+                let fb_idx = fb[i] as usize;
+                let c = SCREEN_COLORS[fb_idx];
+                pixel[0] = c.r;
+                pixel[1] = c.g;
+                pixel[2] = c.b;
+                pixel[3] = 255;
+            }
+
+            // Draw the current frame
+            pixels.render()?;
+            screen.set_vblank(false);
+
+            // Sync to 60hz, only if we have enough audio samples
+            let elapsed = instant.elapsed().as_secs_f32();
+            if queue.get_queued_byte_count() > 8192 && elapsed < frame_time {
+                sleep(Duration::from_secs_f32(frame_time - elapsed));
+            }
+            else {
+                // println!("skip");
+            }
+
+            // Update window title
+            let window_title = format!("{} ({}ms)", WINDOW_TITLE, (elapsed * 1000.0) as u32);
+            window.set_title(&window_title);
+
+            instant = Instant::now();
         }
-
-        // Draw the current frame
-        pixels.render()?;
-        screen.set_vblank(false);
-
-        // Sync to 60hz, only if we have enough audio samples
-        let elapsed = instant.elapsed().as_secs_f32();
-        if queue.get_queued_byte_count() > 8192 && elapsed < frame_time {
-            sleep(Duration::from_secs_f32(frame_time - elapsed));
-        }
-        else {
-            // println!("skip");
-        }
-
-        // Update window title
-        let window_title = format!("{} ({}ms)", WINDOW_TITLE, (elapsed * 1000.0) as u32);
-        window.set_title(&window_title);
-
-        instant = Instant::now();
     }
 
     if let Err(e) = machine.save_status() {
@@ -301,3 +280,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn get_cli_matches() -> clap::ArgMatches<'static> {
+    App::new("rust-gameboy")
+        .version("0.1")
+        .author("Xavier Amado <xamado@gmail.com")
+        .about("GB emulator written in Rust")
+        .arg(Arg::with_name("rom")
+            .long("rom")
+            .help("Specify rom to load")
+            .required(true)
+            .takes_value(true)
+        )
+        .arg(Arg::with_name("no-bootrom")
+            .long("no-bootrom")
+            .help("Avoid the bootrom and just start ROM directly")
+            .takes_value(false)
+        )
+        .arg(Arg::with_name("breakpoints")
+            .long("breakpoints")
+            .short("bp")
+            .help("Comma separated list of breakpoint addresses")
+            .takes_value(true)
+        )
+        .arg(Arg::with_name("watchpoints")
+            .long("watchpoints")
+            .short("wp")
+            .help("Comma separated list of memory addresses to watch")
+            .takes_value(true)
+        )
+        .get_matches()
+}

@@ -197,8 +197,16 @@ impl Machine {
         self.tick();
 
         if let Some(debugger) = &mut self.debugger {
-            debugger.process(self.cpu.borrow(), self.bus.borrow());
+            debugger.process(&*self.cpu.borrow(), &*self.ppu.borrow(), &*self.bus.borrow());
         }
+    }
+
+    pub fn is_stopped(&self) -> bool {
+        if let Some(debugger) = &self.debugger {
+            return debugger.is_stopped();
+        }
+
+        false
     }
 
     fn tick(&mut self) {
@@ -222,7 +230,7 @@ impl Machine {
                 debugger.resume();
             }
             else {
-                debugger.stop(self.cpu.borrow());
+                debugger.stop(&*self.cpu.borrow(), &*self.ppu.borrow());
             }
         }
     }
@@ -231,7 +239,7 @@ impl Machine {
         self.tick();
 
         if let Some(debugger) = &self.debugger {
-            debugger.print_trace(&self.cpu.borrow());
+            debugger.print_trace(&*self.cpu.borrow(), &*self.ppu.borrow());
         }
     }
 }

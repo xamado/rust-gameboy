@@ -59,13 +59,20 @@ enum OBJAttributes {
     Palette = 1 << 4
 }
 
+pub struct PPUDebugState {
+    pub ly: u8,
+    pub stat: u8,
+    pub lcdc: u8,
+    pub cycles: u16,
+}
+
 pub struct PPU {
     bus: Rc<RefCell<MemoryBus>>,
     screen: Rc<RefCell<Screen>>,
     vram: [u8; 0x2000],
     oam: [u8; 0x100],
     mode: PPUMode,
-    line_cycles: u32,
+    line_cycles: u16,
     lcdc: u8,
     stat: u8,
     scy: u8,
@@ -110,6 +117,15 @@ impl PPU {
         }
     }
 
+    pub fn get_debug_state(&self) -> PPUDebugState {
+        PPUDebugState {
+            ly: self.ly,
+            lcdc: self.lcdc,
+            stat: 0x80 | self.stat,
+            cycles: self.line_cycles
+        }
+    }
+    
     pub fn read_oam_byte(&self, addr: u16) -> u8 {
         self.oam[addr as usize]
     }
