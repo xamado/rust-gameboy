@@ -1,4 +1,7 @@
 
+pub fn to_u16(hi: u8, lo: u8) -> u16 {
+    ((hi as u16) << 8) | lo as u16
+}
 pub fn get_flag2(mask: &u8, flag: u8) -> bool {
     (*mask) & flag != 0
 }

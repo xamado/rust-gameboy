@@ -26,16 +26,16 @@ pub struct Instruction {
 }
 
 pub struct Registers {
-    pub a: u8,
-    pub f: u8,
-    pub b: u8,
-    pub c: u8,
-    pub d: u8,
-    pub e: u8,
-    pub h: u8,
-    pub l: u8,
-    pub sp: u16,
-    pub pc: u16
+    a: u8,
+    f: u8,
+    b: u8,
+    c: u8,
+    d: u8,
+    e: u8,
+    h: u8,
+    l: u8,
+    sp: u16,
+    pc: u16
 }
 
 #[derive(Copy, Clone)]
@@ -54,6 +54,15 @@ const INTERRUPT_ADDRESS : [u16; 5] = [
     0x0058,
     0x0060
 ];
+
+pub struct CPUDebugState {
+    pub af: u16,
+    pub bc: u16,
+    pub de: u16,
+    pub hl: u16,
+    pub sp: u16,
+    pub pc: u16,
+}
 
 pub struct CPU {
     state: CPUState,
@@ -615,8 +624,15 @@ impl CPU {
         self.registers.pc = pc;
     }
 
-    pub fn get_registers_state(&self) -> &Registers {
-        &self.registers
+    pub fn get_debug_state(&self) -> CPUDebugState {
+        CPUDebugState {
+            af: to_u16(self.registers.a, self.registers.f),
+            bc: to_u16(self.registers.b, self.registers.c),
+            de: to_u16(self.registers.d, self.registers.e),
+            hl: to_u16(self.registers.h, self.registers.l),
+            sp: self.registers.sp,
+            pc: self.registers.pc,
+        }
     }
 
     pub fn get_next_instruction(&self) -> &Instruction {
