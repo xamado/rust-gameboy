@@ -26,6 +26,7 @@ mod apu;
 use machine::Machine;
 use joystick::JoystickButton;
 use debugger::Debugger;
+use rom::ROM;
 
 const WINDOW_TITLE: &str = "rust-gameboy";
 const BUFFER_WIDTH: u32 = 160;
@@ -108,10 +109,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     
-    let mut machine = Machine::new();
+    let mut rom = ROM::new();
+    rom.open(opt_rom_file);
+
+    let mut machine = Machine::new(rom);
     machine.start(opt_no_bootrom);
     machine.attach_debugger(debugger);
-    machine.load_rom(opt_rom_file);
 
     let mut instant = Instant::now();
     let frame_time: f32 = 1.0 / 60.0;
@@ -273,9 +276,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    if let Err(e) = machine.save_status() {
-        println!("Error saving state: {:?}", e);
-    }
+    // Stop the machine
+    machine.stop();
 
     Ok(())
 }

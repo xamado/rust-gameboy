@@ -1,7 +1,4 @@
 use std::rc::Rc;
-use std::path::PathBuf;
-use std::fs::File;
-use std::io::prelude::*;
 use core::cell::RefCell;
 use closure::closure;
 
@@ -38,14 +35,14 @@ pub struct Machine {
 }
 
 impl Machine {
-    pub fn new() -> Self {
+    pub fn new(rom: ROM) -> Self {
         let bus = Rc::new(RefCell::new(MemoryBus::new()));
         let screen = Rc::new(RefCell::new(Screen::new()));
 
         Self {
             rom_filename: String::from(""),
             bootrom: Rc::new(RefCell::new(BootROM::new())),
-            rom: Rc::new(RefCell::new(ROM::new())),
+            rom: Rc::new(RefCell::new(rom)),
             ram1: Rc::new(RefCell::new(Memory::new(0xC000, 0x1000, 1))),
             ram2: Rc::new(RefCell::new(Memory::new(0xD000, 0x1000, 1))),
             hram: Rc::new(RefCell::new(Memory::new(0xFF80, 0x7F, 1))),
@@ -146,33 +143,8 @@ impl Machine {
         }        
     }
 
-    pub fn load_rom(&mut self, file: &str) {
-        self.rom.borrow_mut().open(file);
-        self.rom_filename = String::from(file);
-
-        // load ram contents if present
-        let rom_filename = self.rom_filename.to_owned();
-        let mut path = PathBuf::from(rom_filename);
-        path.set_extension("sav");
-
-        if path.exists() {
-            let bytes = std::fs::read(&path).expect("Failed to open RAM");
-            self.rom.borrow_mut().set_ram_contents(&bytes);
-        }
-    }
-
-
-    pub fn save_status(&self) -> std::io::Result<()> {
-        let rom_filename = self.rom_filename.to_owned();
-        let mut path = PathBuf::from(rom_filename);
-        path.set_extension("sav");
-        
-        if let Some(ram) = self.rom.borrow().get_ram_contents() {
-            let mut file = File::create(path)?;
-            file.write_all(&ram[0..ram.len()])?;
-        }
-
-        Ok(())
+    pub fn stop(&mut self) {
+        self.rom.borrow().close();
     }
 
     pub fn get_screen(&self) -> &Rc<RefCell<Screen>> {

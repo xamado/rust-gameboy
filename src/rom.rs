@@ -1,5 +1,8 @@
 use crate::iomapped::IOMapped;
 use std::str;
+use std::path::PathBuf;
+use std::fs::File;
+use std::io::prelude::*;
 
 mod mbc;
 mod mbc0;
@@ -14,6 +17,7 @@ use crate::rom::mbc3::MBC3;
 use crate::rom::mbc5::MBC5;
 
 pub struct ROM {
+    filename: String,
     mbc: Option<Box<dyn MBC>>
 }
 
@@ -26,11 +30,14 @@ impl Default for ROM {
 impl ROM {
     pub fn new() -> Self {
         Self {
+            filename: String::new(),
             mbc: None
         }
     }
 
     pub fn open(&mut self, filename : &str) {
+        // open the rom file
+        self.filename = filename.to_owned();
         let bytes = std::fs::read(&filename).expect("Failed to open ROM");
 
         let cart_type = bytes[0x0147];
@@ -53,21 +60,29 @@ impl ROM {
             _ => panic!("Unsupported Cart type: {:#04x}", cart_type)
         };
         
+        if let Some(mbc) = &mut self.mbc {
+            // load ram contents if present
+            let mut path = PathBuf::from(filename);
+            path.set_extension("sav");
+
+            if path.exists() {
+                let bytes = std::fs::read(&path).expect("Failed to open RAM");
+                mbc.set_ram_contents(&bytes);
+            }
+        }
+
         println!("Loaded ROM {}: {} bytes read. Type: {}.", filename, bytes.len(), cart_type);
     }
 
-    pub fn get_ram_contents(&self) -> Option<&Vec<u8>> {
+    pub fn close(&self) {
+        let mut path = PathBuf::from(self.filename.to_owned());
+        path.set_extension("sav");
+        
         if let Some(mbc) = &self.mbc {
-            mbc.get_ram_contents()
-        }
-        else {
-            None
-        }   
-    }
-
-    pub fn set_ram_contents(&mut self, ram: &[u8]) {
-        if let Some(mbc) = &mut self.mbc {
-            mbc.set_ram_contents(&ram);
+            if let Some(ram) = mbc.get_ram_contents() {
+                let mut file = File::create(path).expect("Failed to create SAV file");
+                file.write_all(&ram[0..ram.len()]).expect("Failed to write to SAV file");
+            }
         }
     }
 }
