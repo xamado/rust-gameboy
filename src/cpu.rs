@@ -1,10 +1,11 @@
 use crate::memorybus::MemoryBus;
 use crate::bitutils::*;
+use crate::machine::GameBoyModel;
+use crate::iomapped::IOMapped;
 
 use hashbrown::HashMap;
 use std::rc::Rc;
 use core::cell::RefCell;
-use crate::iomapped::IOMapped;
 
 const FLAG_Z: u8 = 1 << 7;
 const FLAG_N: u8 = 1 << 6;
@@ -65,6 +66,7 @@ pub struct CPUDebugState {
 }
 
 pub struct CPU {
+    model: GameBoyModel,
     state: CPUState,
     registers: Registers,
     instructions: HashMap<u16, Instruction>,
@@ -76,7 +78,7 @@ pub struct CPU {
 }
 
 impl CPU {
-    pub fn new(bus: Rc<RefCell<MemoryBus>>) -> Self {
+    pub fn new(model: GameBoyModel, bus: Rc<RefCell<MemoryBus>>) -> Self {
         let instruction_table : HashMap<u16, Instruction> = [
             (0x0000_u16, Instruction { dissassembly: "NOP", bytes: 1, func: CPU::op_nop }),
             (0x0010_u16, Instruction { dissassembly: "STOP", bytes: 2, func: CPU::op_stop }),
@@ -602,26 +604,51 @@ impl CPU {
         ].iter().cloned().collect();
 
         Self {
+            model,
             bus,
             instructions: instruction_table,
             registers: Registers { 
-                a: 0x01, f: 0x00,
-                b: 0xFF, c: 0x13,
-                d: 0x00, e: 0xC1,
-                h: 0x84, l: 0x03,
-                sp: 0xFFFE,
+                a: 0x00, f: 0x00,
+                b: 0x00, c: 0x00,
+                d: 0x00, e: 0x00,
+                h: 0x00, l: 0x00,
+                sp: 0x0000,
                 pc: 0x0000
             },
             state: CPUState::Normal,
             interrupts_enabled: false,
             interrupts_enable_request: false,
-            irq_f: 0,
-            irq_e: 0
+            irq_f: 0xE1,
+            irq_e: 0x00
         }
     }
 
-    pub fn set_start_pc(&mut self, pc: u16) {
-        self.registers.pc = pc;
+    pub fn set_initial_state(&mut self, skip_bootrom: bool) {
+        if skip_bootrom {
+            match self.model {
+                GameBoyModel::DMG => {
+                    self.registers.a = 0x01;
+                    self.registers.f = 0xB0;
+                    self.registers.d = 0x00;
+                    self.registers.e = 0xD8;
+                    self.registers.h = 0x01;
+                    self.registers.l = 0x4D;
+                    self.registers.pc = 0x100;
+                    self.registers.sp = 0xFFFE;
+                },
+
+                GameBoyModel::GBC => {
+                    self.registers.a = 0x11;
+                    self.registers.f = 0x80;
+                    self.registers.d = 0x00;
+                    self.registers.e = 0x08;
+                    self.registers.h = 0x00;
+                    self.registers.l = 0x7C;
+                    self.registers.pc = 0x100;
+                    self.registers.sp = 0xFFFE;
+                }
+            }            
+        }
     }
 
     pub fn get_debug_state(&self) -> CPUDebugState {

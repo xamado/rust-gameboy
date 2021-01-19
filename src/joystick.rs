@@ -48,13 +48,13 @@ impl Joystick {
 impl IOMapped for Joystick {
     fn read_byte(&self, _address: u16) -> u8 {
         if self.data & (1 << 5) == 0 { // select button keys
-            self.data & 0x30 | self.state & 0x0F
+            0xC0 | self.data & 0x30 | self.state & 0x0F
         }
         else if self.data & (1 << 4) == 0 { // select direction keys
-            self.data & 0x30 | ((self.state & 0xF0) >> 4)
+            0xC0 | self.data & 0x30 | ((self.state & 0xF0) >> 4)
         }
         else {
-            self.data
+            0xC0 | self.data
         }
     }
 

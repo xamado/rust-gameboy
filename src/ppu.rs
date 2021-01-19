@@ -127,7 +127,7 @@ impl PPU {
             mode: PPUMode::ReadOAM,
             line_cycles: 0,
             lcdc: 0x00,
-            stat: 0x80,
+            stat: 0x84,
             scy: 0,
             scx: 0,
             ly: 0,
@@ -152,6 +152,22 @@ impl PPU {
             hdma_length: 0,
             total_vblank_cycles: 0,
             trigger_stat_quirk: false,
+        }
+    }
+
+    pub fn set_initial_state(&mut self, skip_bootrom: bool) {
+        if skip_bootrom {
+            match self.hardware_model {
+                GameBoyModel::DMG => {
+                    self.stat = 0x85;
+                    self.lcdc = 0x91;
+                },
+
+                GameBoyModel::GBC => {
+                    self.stat = 0x81;
+                    self.lcdc = 0x91;
+                }
+            }
         }
     }
 

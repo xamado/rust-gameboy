@@ -62,7 +62,7 @@ impl Machine {
             bus: bus.clone(),
             joystick: Rc::new(RefCell::new(Joystick::new(Rc::clone(&bus)))),
             screen: screen.clone(),
-            cpu: Rc::new(RefCell::new(CPU::new(Rc::clone(&bus)))),
+            cpu: Rc::new(RefCell::new(CPU::new(model, Rc::clone(&bus)))),
             ppu: Rc::new(RefCell::new(PPU::new(model, Rc::clone(&bus), screen))),
             apu: Rc::new(RefCell::new(APU::new())),
             timer: Rc::new(RefCell::new(Timer::new(Rc::clone(&bus)))),
@@ -203,9 +203,8 @@ impl Machine {
         bus.map_address_write(0xFFFF, closure!(clone self.cpu, |addr, data| cpu.borrow_mut().write_byte(addr, data)));
 
         // Advance PC to 0x100 if we are skipping the bootrom
-        if skip_bootrom {
-            self.cpu.borrow_mut().set_start_pc(0x100);
-        }        
+        self.cpu.borrow_mut().set_initial_state(skip_bootrom);
+        self.ppu.borrow_mut().set_initial_state(skip_bootrom);
     }
 
     pub fn stop(&mut self) {
