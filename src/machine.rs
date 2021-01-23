@@ -246,7 +246,7 @@ impl Machine {
     }
 
     fn tick(&mut self) {
-        let cpu_cycles = self.cpu.borrow_mut().step();
+        let cpu_cycles = self.cpu.borrow().tick();
         let clocks = cpu_cycles * 4;
 
         for _ in 0..clocks {

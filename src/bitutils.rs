@@ -7,8 +7,8 @@ pub fn get_bit(mask: u8, bit: u8) -> u8 {
     (mask & (1 << bit)) >> bit
 }
 
-pub fn get_flag2(mask: &u8, flag: u8) -> bool {
-    (*mask) & flag != 0
+pub fn get_flag2(mask: u8, flag: u8) -> bool {
+    mask & flag != 0
 }
 
 pub fn set_flag2(mask: &mut u8, flag: u8, val: bool) {

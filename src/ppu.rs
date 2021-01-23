@@ -214,7 +214,7 @@ impl PPU {
         self.handle_dma_hdma();
 
         // If LCD is not ENABLED do nothing
-        if !get_flag2(&self.lcdc, LCDCBits::LCDEnable as u8) {
+        if !get_flag2(self.lcdc, LCDCBits::LCDEnable as u8) {
             // self.ly = 0;
             return;
         }
@@ -367,7 +367,7 @@ impl PPU {
         let ly_eq_lyc = self.ly == self.lyc;
         set_flag2(&mut self.stat, STATBits::LYCComparisonSignal as u8, ly_eq_lyc);
 
-        if get_flag2(&self.stat, STATBits::LYCCheckEnable as u8) && ly_eq_lyc {
+        if get_flag2(self.stat, STATBits::LYCCheckEnable as u8) && ly_eq_lyc {
             // raise the stat interrupt
             self.raise_interrupt(Interrupts::LCDStat);
         }
@@ -738,7 +738,7 @@ impl IOMapped for PPU {
 
             // FF41 STAT - LCDC Status (R/W)
             0xFF41 => {
-                if !get_flag2(&self.lcdc, LCDCBits::LCDEnable as u8) {
+                if !get_flag2(self.lcdc, LCDCBits::LCDEnable as u8) {
                     // disable bits 0-2 if LCD is off
                     (0x80 | self.stat) & !0x7
                 }
@@ -811,7 +811,7 @@ impl IOMapped for PPU {
     fn write_byte(&mut self, address: u16, data: u8) {
         match address {
             0x8000..=0x9FFF => {
-                let lcd_enabled = get_flag2(&self.lcdc, LCDCBits::LCDEnable as u8);
+                let lcd_enabled = get_flag2(self.lcdc, LCDCBits::LCDEnable as u8);
 
                 if !lcd_enabled || self.mode != PPUMode::ReadVRAM {
                     self.write_vram(address, self.vram_bank, data);
@@ -823,7 +823,7 @@ impl IOMapped for PPU {
             },
 
             0xFE00..=0xFE9F => {
-                let lcd_enabled = get_flag2(&self.lcdc, LCDCBits::LCDEnable as u8);
+                let lcd_enabled = get_flag2(self.lcdc, LCDCBits::LCDEnable as u8);
 
                 if !lcd_enabled || (self.mode != PPUMode::ReadVRAM && self.mode != PPUMode::ReadOAM) {
                     self.oam[(address - 0xFE00) as usize] = data;
@@ -836,9 +836,9 @@ impl IOMapped for PPU {
 
             // FF40 LCDC - LCD Control (R/W)
             0xFF40 => {
-                let was_on = get_flag2(&self.lcdc, LCDCBits::LCDEnable as u8);
+                let was_on = get_flag2(self.lcdc, LCDCBits::LCDEnable as u8);
                 self.lcdc = data;
-                let is_on = get_flag2(&self.lcdc, LCDCBits::LCDEnable as u8);
+                let is_on = get_flag2(self.lcdc, LCDCBits::LCDEnable as u8);
 
                 if was_on && !is_on {
                     self.disable_lcd();
