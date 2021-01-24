@@ -1,7 +1,8 @@
 use crate::iomapped::IOMapped;
+use core::cell::RefCell;
 
 pub struct Memory {
-    data: Vec<u8>,
+    data: RefCell<Vec<u8>>,
     base_addr: u16,
     bank_size: u16,
     banks: u8,
@@ -12,7 +13,7 @@ pub struct Memory {
 impl Memory {
     pub fn new(base_addr: u16, size: usize, banks: u8) -> Self {
         Self {
-            data: vec![0; size],
+            data: RefCell::new(vec![0; size]),
             base_addr,
             banks,
             bank_size: (size as u16) / (banks as u16),
@@ -34,11 +35,13 @@ impl Memory {
 impl IOMapped for Memory {
     fn read_byte(&self, address: u16) -> u8 {
         let addr: u16 = (self.selected_bank * self.bank_size) + (address - self.base_addr);
-        self.data[addr as usize]
+        let data = self.data.borrow();
+        data[addr as usize]
     }
 
-    fn write_byte(&mut self, address: u16, data: u8) {
+    fn write_byte(&self, address: u16, value: u8) {
         let addr: u16 = (self.selected_bank * self.bank_size) + (address - self.base_addr);
-        self.data[addr as usize] = data;
+        let mut data = self.data.borrow_mut();
+        data[addr as usize] = value;
     }
 }

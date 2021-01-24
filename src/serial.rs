@@ -20,7 +20,7 @@ impl IOMapped for Serial {
         }
     }
 
-    fn write_byte(&mut self, _address: u16, _data: u8) {
+    fn write_byte(&self, _address: u16, _data: u8) {
         // println!("serial: {}", data as char);
     }
 }

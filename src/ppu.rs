@@ -78,15 +78,7 @@ pub struct PPUDebugState {
     pub cycles: u16,
 }
 
-pub struct PPU {
-    hardware_model: GameBoyModel,
-    bus: Rc<RefCell<MemoryBus>>,
-    screen: Rc<RefCell<Screen>>,
-    vram: [u8; 0x4000],
-    vram_bank: u16,
-    oam: [u8; 0x100],
-    mode: PPUMode,
-    line_cycles: u16,
+struct PPURegisters {
     lcdc: u8,
     stat: u8,
     scy: u8,
@@ -111,9 +103,27 @@ pub struct PPU {
     hdma_destination: u16,
     hdma_mode: u8,
     hdma_length: u8,
-    total_vblank_cycles: u32,
+}
+
+struct PPUState {
+    mode: PPUMode,
+    line_cycles: u16,
     trigger_stat_quirk: bool,
 }
+
+pub struct PPU {
+    hardware_model: GameBoyModel,
+    bus: Rc<RefCell<MemoryBus>>,
+    screen: Rc<RefCell<Screen>>,
+    registers: RefCell<PPURegisters>,
+    state: RefCell<PPUState>,
+    vram: RefCell<[u8; 0x4000]>,
+    vram_bank: u16,
+    oam: RefCell<[u8; 0x100]>,
+}
+
+// TODO: VRAM and OAM into Vecs for copy?
+// TODO: Unify state.mode and the lcdc register...
 
 impl PPU {
     pub fn new(model: GameBoyModel, bus: Rc<RefCell<MemoryBus>>, screen: Rc<RefCell<Screen>>) -> Self {
@@ -121,62 +131,70 @@ impl PPU {
             hardware_model: model,
             bus,
             screen,
-            vram: [0; 0x4000],
+            vram: RefCell::new([0; 0x4000]),
             vram_bank: 0,
-            oam: [0; 0x100],
-            mode: PPUMode::ReadOAM,
-            line_cycles: 0,
-            lcdc: 0x00,
-            stat: 0x84,
-            scy: 0,
-            scx: 0,
-            ly: 0,
-            lyc: 0,
-            wpx: 0,
-            wpy: 0,
-            bg_palette: 0xFC,
-            obj_palette0: 0xFF,
-            obj_palette1: 0xFF,
-            cgb_bg_palette_index: 0,
-            cgb_bg_palette_autoincrement: false,
-            cgb_bg_palette_data: [0xFF; 64],
-            cgb_obj_palette_index: 0,
-            cgb_obj_palette_autoincrement: false,
-            cgb_obj_palette_data: [0xFF; 64],
-            dma_oam_active: false,
-            dma_oam_source: 0,
-            hdma_active: false,
-            hdma_source: 0,
-            hdma_destination: 0,
-            hdma_mode: 0,
-            hdma_length: 0,
-            total_vblank_cycles: 0,
-            trigger_stat_quirk: false,
+            oam: RefCell::new([0; 0x100]),
+            state: RefCell::new(PPUState {
+                mode: PPUMode::ReadOAM,
+                line_cycles: 0,
+                trigger_stat_quirk: false,
+            }),
+            registers: RefCell::new(PPURegisters {
+                lcdc: 0x00,
+                stat: 0x84,
+                scy: 0,
+                scx: 0,
+                ly: 0,
+                lyc: 0,
+                wpx: 0,
+                wpy: 0,
+                bg_palette: 0xFC,
+                obj_palette0: 0xFF,
+                obj_palette1: 0xFF,
+                cgb_bg_palette_index: 0,
+                cgb_bg_palette_autoincrement: false,
+                cgb_bg_palette_data: [0xFF; 64],
+                cgb_obj_palette_index: 0,
+                cgb_obj_palette_autoincrement: false,
+                cgb_obj_palette_data: [0xFF; 64],
+                dma_oam_active: false,
+                dma_oam_source: 0,
+                hdma_active: false,
+                hdma_source: 0,
+                hdma_destination: 0,
+                hdma_mode: 0,
+                hdma_length: 0,
+            }),            
         }
     }
 
-    pub fn set_initial_state(&mut self, skip_bootrom: bool) {
+    pub fn set_initial_state(&self, skip_bootrom: bool) {
         if skip_bootrom {
+            let mut registers = self.registers.borrow_mut();
+        
             match self.hardware_model {
                 GameBoyModel::DMG => {
-                    self.stat = 0x85;
-                    self.lcdc = 0x91;
+                    registers.stat = 0x85;
+                    registers.lcdc = 0x91;
                 },
 
                 GameBoyModel::GBC => {
-                    self.stat = 0x81;
-                    self.lcdc = 0x91;
+                    registers.stat = 0x81;
+                    registers.lcdc = 0x91;
                 }
             }
         }
     }
 
     pub fn get_debug_state(&self) -> PPUDebugState {
+        let registers = self.registers.borrow();
+        let state = self.state.borrow();
+
         PPUDebugState {
-            ly: self.ly,
-            lcdc: self.lcdc,
-            stat: 0x80 | self.stat,
-            cycles: self.line_cycles
+            ly: registers.ly,
+            lcdc: registers.lcdc,
+            stat: 0x80 | registers.stat,
+            cycles: state.line_cycles
         }
     }
     
@@ -195,144 +213,148 @@ impl PPU {
     }
 
     pub fn read_oam_byte(&self, addr: u16) -> u8 {
-        self.oam[addr as usize]
+        let oam = self.oam.borrow();
+        oam[addr as usize]
     }
 
-    pub fn write_oam_byte(&mut self, addr: u16, data: u8) {
-        self.oam[addr as usize] = data;
+    pub fn write_oam_byte(&self, addr: u16, data: u8) {
+        let mut oam = self.oam.borrow_mut();
+        oam[addr as usize] = data;
     }
 
-    pub fn tick(&mut self) {
-        // HACK: In DMG writing anything to STAT while in HBLANK or VBLANK causes bit 1 of the IF register (0xFF0F) to be set
-        // Roadrash and Legend of Zerd depend on this bug
-        if self.trigger_stat_quirk {
-            self.raise_interrupt(Interrupts::LCDStat);
-            self.trigger_stat_quirk = false;
-        }
+    pub fn tick(&self) {
+        let mut registers = self.registers.borrow_mut();
 
         // Do HDMA or DMA transfers to VRAM/OAM memory
-        self.handle_dma_hdma();
+        self.handle_dma(&mut registers);
+        self.handle_hdma(&mut registers);
+        
+        // HACK: In DMG writing anything to STAT while in HBLANK or VBLANK causes bit 1 of the IF register (0xFF0F) to be set
+        // Roadrash and Legend of Zerd depend on this bug
+        let mut state = self.state.borrow_mut();
+        if state.trigger_stat_quirk {
+            // self.raise_interrupt(Interrupts::LCDStat);
+            // self.trigger_stat_quirk = false;
+        }
 
         // If LCD is not ENABLED do nothing
-        if !get_flag2(self.lcdc, LCDCBits::LCDEnable as u8) {
-            // self.ly = 0;
+        if !get_flag2(registers.lcdc, LCDCBits::LCDEnable as u8) {
             return;
         }
 
-        self.line_cycles += 1;
-        self.total_vblank_cycles += 1;
         
-        match self.mode {
+        state.line_cycles += 1;
+        
+        match state.mode {
             // OAM access mode Mode 2
             PPUMode::ReadOAM => { 
                 // wait for 80 cycles, then go to mode VRAM READ MODE
-                if self.line_cycles == 80 {
-                    self.set_mode(PPUMode::ReadVRAM);
+                if state.line_cycles == 80 {
+                    self.set_mode(PPUMode::ReadVRAM, &mut state, &mut registers);
                 }
             },
 
             // VRAM ACCESS - Mode 3
             PPUMode::ReadVRAM => {
-                if self.line_cycles == 252 { // 172 cycles + 80 from mode 2
+                if state.line_cycles == 252 { // 172 cycles + 80 from mode 2
                     // draw scanline
-                    self.render_scanline();
+                    self.render_scanline(&registers);
 
-                    self.set_mode(PPUMode::HBlank);
+                    self.set_mode(PPUMode::HBlank, &mut state, &mut registers);
                 }
                 
                 // HBlank STAT interrupt happens 1 cycle before mode switch
-                else if self.line_cycles == 248 && self.stat & (STATBits::Mode0HBlankCheckEnable as u8) != 0 {
+                else if state.line_cycles == 248 && get_flag2(registers.stat, STATBits::Mode0HBlankCheckEnable as u8) {
                     self.raise_interrupt(Interrupts::LCDStat);
                 }
             },
 
             // HBLANK - Mode 0
             PPUMode::HBlank => { 
-                if self.line_cycles == 456 {
-                    self.line_cycles -= 456;
+                if state.line_cycles == 456 {
+                    state.line_cycles -= 456;
                     
                     // update LY
-                    self.ly = (self.ly + 1) % MAX_SCANLINES;
+                    let ly = registers.ly;
+                    registers.ly = (ly + 1) % MAX_SCANLINES;
 
                     // check if LY = LYC if enabled (bit 6)
-                    self.check_lyc_compare();
+                    self.check_lyc_compare(&mut registers);
 
-                    if self.ly == VBLANK_LINE { // ly = 144 
-                        self.set_mode(PPUMode::VBlank);
+                    if registers.ly == VBLANK_LINE { // ly = 144 
+                        self.set_mode(PPUMode::VBlank, &mut state, &mut registers);
                     }
                     else {
-                        self.set_mode(PPUMode::ReadOAM);
+                        self.set_mode(PPUMode::ReadOAM, &mut state, &mut registers);
                     }
                 }
             },
 
             // VBLANK - Mode 1
             PPUMode::VBlank => { 
-                if self.line_cycles == 456 {
-                    self.line_cycles -= 456;
+                if state.line_cycles == 456 {
+                    state.line_cycles -= 456;
 
                     // update LY
-                    self.ly = (self.ly + 1) % MAX_SCANLINES;
+                    registers.ly = (registers.ly + 1) % MAX_SCANLINES;
                     
                     // compare LY=LYC
-                    self.check_lyc_compare();
+                    self.check_lyc_compare(&mut registers);
 
-                    if self.ly == 0 {
+                    if registers.ly == 0 {
                         self.screen.borrow_mut().set_vblank(true);
-
-                        self.total_vblank_cycles = 0;
-                        self.set_mode(PPUMode::ReadOAM);
+                        self.set_mode(PPUMode::ReadOAM, &mut state, &mut registers);
                     }
                 }
             }
         }
     }
 
-    fn handle_dma_hdma(&mut self) {
+    fn handle_dma(&self, registers: &mut PPURegisters) {
         // in theory dma copy takes a while... in fact:
         // This copy needs 160 × 4 + 4 clocks to
         // complete in both double speed and single speeds modes. The copy starts after the 4 setup clocks,
         // and a new byte is copied every 4 clocks.
-        if self.dma_oam_active {
-            self.do_dma_transfer(self.dma_oam_source);
-            self.dma_oam_active = false;
+        if registers.dma_oam_active {
+            self.do_dma_transfer(registers.dma_oam_source);
+            registers.dma_oam_active = false;
         }
+    }
 
-        if self.hdma_active && self.hdma_mode == 0 {
-            while self.hdma_length != 0xFF {
-                self.hdma_copy_block();
+    fn handle_hdma(&self, registers: &mut PPURegisters) {
+        if registers.hdma_active && registers.hdma_mode == 0 {
+            while registers.hdma_length != 0xFF {
+                self.hdma_copy_block(registers);
             }
         }
     }
 
-    fn hdma_copy_block(&mut self) {
-        if self.mode == PPUMode::ReadVRAM {
-            println!("Warning, HDMA tried to write to VRAM in Mode3");
-        }
+    fn hdma_copy_block(&self, registers: &mut PPURegisters) {
+        let bus = self.bus.borrow();
 
         for _ in 0..16 {
-            let b = self.bus.borrow().read_byte(self.hdma_source);
-            self.write_vram(0x8000 + self.hdma_destination, self.vram_bank, b);
+            let b = bus.read_byte(registers.hdma_source);
+            self.write_vram(0x8000 + registers.hdma_destination, self.vram_bank, b);
 
-            self.hdma_source = self.hdma_source.wrapping_add(1);
-            self.hdma_destination = self.hdma_destination.wrapping_add(1);
+            registers.hdma_source = registers.hdma_source.wrapping_add(1);
+            registers.hdma_destination = registers.hdma_destination.wrapping_add(1);
         }
 
-        self.hdma_length = self.hdma_length.wrapping_sub(1);
+        registers.hdma_length = registers.hdma_length.wrapping_sub(1);
 
-        if self.hdma_length == 0xFF {
-            self.hdma_active = false;            
+        if registers.hdma_length == 0xFF {
+            registers.hdma_active = false;            
         }
     }
 
-    fn set_mode(&mut self, mode: PPUMode) {
-        self.mode = mode;
-        self.stat = self.stat & 0x7C | (self.mode as u8);
+    fn set_mode(&self, mode: PPUMode, state: &mut PPUState, registers: &mut PPURegisters) {
+        state.mode = mode;
+        registers.stat = registers.stat & 0x7C | (state.mode as u8);
 
-        match self.mode {
+        match state.mode {
             PPUMode::HBlank => {
-                if self.hdma_active && self.hdma_mode == 1 {
-                    self.hdma_copy_block();
+                if registers.hdma_active && registers.hdma_mode == 1 {
+                    self.hdma_copy_block(registers);
                 }
             },
 
@@ -340,18 +362,18 @@ impl PPU {
                 // raise the VBlank interrupt
                 self.raise_interrupt(Interrupts::VBlank);
 
-                if self.stat & (STATBits::Mode1VBlankCheckEnable as u8) != 0 {
+                if get_flag2(registers.stat, STATBits::Mode1VBlankCheckEnable as u8) {
                     self.raise_interrupt(Interrupts::LCDStat);
                 }
 
                 // vbl stat also triggers with oam check
-                if self.stat & (STATBits::Mode2OAMCheckEnable as u8) != 0 {
+                if get_flag2(registers.stat, STATBits::Mode2OAMCheckEnable as u8) {
                     self.raise_interrupt(Interrupts::LCDStat);
                 }
             },
 
             PPUMode::ReadOAM => {
-                if self.stat & (STATBits::Mode2OAMCheckEnable as u8) != 0 {
+                if get_flag2(registers.stat, STATBits::Mode2OAMCheckEnable as u8) {
                     self.raise_interrupt(Interrupts::LCDStat);
                 }
             }
@@ -362,12 +384,12 @@ impl PPU {
         }
     }
 
-    fn check_lyc_compare(&mut self) {
+    fn check_lyc_compare(&self, registers: &mut PPURegisters) {
         // update bit 2 with the comparison result
-        let ly_eq_lyc = self.ly == self.lyc;
-        set_flag2(&mut self.stat, STATBits::LYCComparisonSignal as u8, ly_eq_lyc);
+        let ly_eq_lyc = registers.ly == registers.lyc;
+        set_flag2(&mut registers.stat, STATBits::LYCComparisonSignal as u8, ly_eq_lyc);
 
-        if get_flag2(self.stat, STATBits::LYCCheckEnable as u8) && ly_eq_lyc {
+        if get_flag2(registers.stat, STATBits::LYCCheckEnable as u8) && ly_eq_lyc {
             // raise the stat interrupt
             self.raise_interrupt(Interrupts::LCDStat);
         }
@@ -379,19 +401,19 @@ impl PPU {
         self.bus.borrow().write_byte(0xFF0F, iif);
     }
 
-    fn disable_lcd(&mut self) {
-        self.ly = 0;
-        self.line_cycles = 0;
-        self.mode = PPUMode::HBlank;
-        self.stat = self.stat & 0x7C | (self.mode as u8);
+    fn disable_lcd(&self, state: &mut PPUState, registers: &mut PPURegisters) {
+        registers.ly = 0;
+        state.line_cycles = 0;
+        state.mode = PPUMode::HBlank;
+        registers.stat = registers.stat & 0x7C | (state.mode as u8);
     }
 
-    fn enable_lcd(&mut self) {
-        set_flag2(&mut self.stat, STATBits::LYCComparisonSignal as u8, true);
+    fn enable_lcd(&self, registers: &mut PPURegisters) {
+        set_flag2(&mut registers.stat, STATBits::LYCComparisonSignal as u8, true);
     }
 
-    fn pick_visible_objects(&self) -> Vec<(u8, OAMEntry)> {
-        let mode_8x16 = (self.lcdc & (LCDCBits::OBJSize as u8)) != 0;
+    fn pick_visible_objects(&self, registers: &PPURegisters) -> Vec<(u8, OAMEntry)> {
+        let mode_8x16 = get_flag2(registers.lcdc, LCDCBits::OBJSize as u8);
         let height = if mode_8x16 { 16 } else { 8 };
 
         let mut objs: Vec<(u8, OAMEntry)> = vec!();
@@ -404,7 +426,7 @@ impl PPU {
             }
 
             let y = obj.y.wrapping_sub(16);
-            if self.ly.wrapping_sub(y) < height {
+            if registers.ly.wrapping_sub(y) < height {
                 objs.push((i, obj));
             }
         }
@@ -421,28 +443,28 @@ impl PPU {
         visible_sprites
     }
 
-    fn render_scanline(&mut self) {
-        let bg_enabled = (self.lcdc & (LCDCBits::BGWindowDisplayPriority as u8)) != 0;
-        let w_enabled = (self.lcdc & (LCDCBits::WindowEnable as u8)) != 0;
-        let obj_enabled = (self.lcdc & (LCDCBits::OBJDisplayEnable as u8)) != 0;
+    fn render_scanline(&self, registers: &PPURegisters) {
+        let bg_enabled = get_flag2(registers.lcdc, LCDCBits::BGWindowDisplayPriority as u8);
+        let w_enabled = get_flag2(registers.lcdc, LCDCBits::WindowEnable as u8);
+        let obj_enabled = get_flag2(registers.lcdc, LCDCBits::OBJDisplayEnable as u8);
 
         let mut bg_buffer: [u16; 160] = [0; 160];
         let mut bg_attribs: [u8; 160] = [0; 160];
 
         if bg_enabled {
-            self.draw_background(&mut bg_buffer, &mut bg_attribs);
+            self.draw_background(&mut bg_buffer, &mut bg_attribs, registers);
         }
 
         if w_enabled && (self.hardware_model == GameBoyModel::GBC || bg_enabled) {
-            self.draw_window(&mut bg_buffer, &mut bg_attribs);
+            self.draw_window(&mut bg_buffer, &mut bg_attribs, registers);
         }
 
         if obj_enabled {
-            let mode_8x16 = (self.lcdc & (LCDCBits::OBJSize as u8)) != 0;
+            let mode_8x16 = get_flag2(registers.lcdc, LCDCBits::OBJSize as u8);
             let height = if mode_8x16 { 16 } else { 8 };
             let tile_data_base_address: u16 = 0x8000;
 
-            let objs = self.pick_visible_objects();
+            let objs = self.pick_visible_objects(registers);
 
             for (_idx, obj) in objs {
                 if obj.x == 0 || obj.x >= 168 {
@@ -452,7 +474,7 @@ impl PPU {
                 let x = obj.x.wrapping_sub(8);
                 let y = obj.y.wrapping_sub(16);
 
-                let mut row = self.ly.wrapping_sub(y);
+                let mut row = registers.ly.wrapping_sub(y);
                 if obj.flags.flip_y {
                     row = height - row - 1;
                 }
@@ -477,14 +499,14 @@ impl PPU {
                     if color_idx != 0 {
                         match self.hardware_model {
                             GameBoyModel::DMG => {
-                                let colors: u8 = if obj.flags.palette == 1 { self.obj_palette1 } else { self.obj_palette0 };
+                                let colors: u8 = if obj.flags.palette == 1 { registers.obj_palette1 } else { registers.obj_palette0 };
                                 let color = (colors & (3 << (color_idx * 2))) >> (color_idx * 2);
                                 bg_buffer[idx] = color as u16;
                             }
 
                             GameBoyModel::GBC => {
                                 let palette_color_idx = (obj.flags.cgb_palette * 8) + (color_idx * 2);
-                                let palette_color: u16 = (self.cgb_obj_palette_data[palette_color_idx as usize] as u16) + ((self.cgb_obj_palette_data[(palette_color_idx + 1) as usize] as u16) << 8);
+                                let palette_color: u16 = (registers.cgb_obj_palette_data[palette_color_idx as usize] as u16) + ((registers.cgb_obj_palette_data[(palette_color_idx + 1) as usize] as u16) << 8);
 
                                 bg_buffer[idx] = palette_color;
                             }
@@ -494,23 +516,23 @@ impl PPU {
             }
         }
 
-        self.screen.borrow_mut().set_scanline(self.ly as u8, &bg_buffer);
+        self.screen.borrow_mut().set_scanline(registers.ly as u8, &bg_buffer);
     }
     
-    fn draw_background(&self, color_buffer: &mut [u16; 160], bg_attribs: &mut [u8; 160]) {
-        let start_tile_row: u8 = ((self.scy as u16 + self.ly as u16) / (TILE_HEIGHT as u16)) as u8;
-        let start_tile_col: u8 = self.scx / TILE_WIDTH;
+    fn draw_background(&self, color_buffer: &mut [u16; 160], bg_attribs: &mut [u8; 160], registers: &PPURegisters) {
+        let start_tile_row: u8 = ((registers.scy as u16 + registers.ly as u16) / (TILE_HEIGHT as u16)) as u8;
+        let start_tile_col: u8 = registers.scx / TILE_WIDTH;
         let end_tile_col: u8 = start_tile_col + 21;
-        let pixel_row = (self.scy as u16 + self.ly as u16) % TILE_HEIGHT as u16;
+        let pixel_row = (registers.scy as u16 + registers.ly as u16) % TILE_HEIGHT as u16;
         
-        let display_select = self.lcdc & (LCDCBits::BackgroundTilemapDisplaySelect as u8);
-        let bg_tile_map_address: u16 = if (display_select) != 0 { 0x9C00 } else { 0x9800 };
+        let display_select = get_flag2(registers.lcdc, LCDCBits::BackgroundTilemapDisplaySelect as u8);
+        let bg_tile_map_address: u16 = if display_select { 0x9C00 } else { 0x9800 };
 
-        let addressing_mode = self.lcdc & LCDCBits::TileDataSelect as u8;
-        let tile_data_base_address: u16 = if addressing_mode != 0 { 0x8000 } else { 0x8800 };
+        let addressing_mode = get_flag2(registers.lcdc, LCDCBits::TileDataSelect as u8);
+        let tile_data_base_address: u16 = if addressing_mode { 0x8000 } else { 0x8800 };
 
         let mut pixel_idx = 0;
-        let scx: u16 = self.scx as u16;
+        let scx: u16 = registers.scx as u16;
 
         for x in start_tile_col..end_tile_col {
             // read tile number from tile map
@@ -521,7 +543,7 @@ impl PPU {
             let tile_attribs = self.read_tile_attribs(tile_address);
 
             // read tile data
-            let tile_index: u8 = if addressing_mode != 0 { tile_number } else { ((tile_number as i16) + 128) as u8 };
+            let tile_index: u8 = if addressing_mode { tile_number } else { ((tile_number as i16) + 128) as u8 };
             let tile_row_data = match self.hardware_model {
                 GameBoyModel::DMG => {
                     self.read_tile_data(tile_data_base_address, 0, tile_index, pixel_row as u8)
@@ -547,14 +569,14 @@ impl PPU {
 
                     match self.hardware_model {
                         GameBoyModel::DMG => {
-                            let bg_color = (self.bg_palette & (3 << (color_idx * 2))) >> (color_idx * 2);
+                            let bg_color = (registers.bg_palette & (3 << (color_idx * 2))) >> (color_idx * 2);
                             color_buffer[pixel_idx] = bg_color as u16;
                             bg_attribs[pixel_idx] = color_idx;
                         }
 
                         GameBoyModel::GBC => {
                             let palette_color_idx = (tile_attribs.palette * 8) + (color_idx * 2);
-                            let palette_color: u16 = (self.cgb_bg_palette_data[palette_color_idx as usize] as u16) + ((self.cgb_bg_palette_data[(palette_color_idx + 1) as usize] as u16) << 8);
+                            let palette_color: u16 = (registers.cgb_bg_palette_data[palette_color_idx as usize] as u16) + ((registers.cgb_bg_palette_data[(palette_color_idx + 1) as usize] as u16) << 8);
 
                             color_buffer[pixel_idx] = palette_color;
                             bg_attribs[pixel_idx] = color_idx;
@@ -573,19 +595,19 @@ impl PPU {
         }
     }
 
-    fn draw_window(&self, color_buffer: &mut [u16; 160], bg_attribs: &mut [u8; 160]) {
-        let window_select = self.lcdc & (LCDCBits::WindowTilemapDisplaySelect as u8);
+    fn draw_window(&self, color_buffer: &mut [u16; 160], bg_attribs: &mut [u8; 160], registers: &PPURegisters) {
+        let window_select = registers.lcdc & (LCDCBits::WindowTilemapDisplaySelect as u8);
         let window_tile_map_address: u16 = if (window_select) != 0 { 0x9C00 } else { 0x9800 };
 
-        let addressing_mode = self.lcdc & LCDCBits::TileDataSelect as u8;
+        let addressing_mode = registers.lcdc & LCDCBits::TileDataSelect as u8;
         let tile_data_base_address: u16 = if addressing_mode != 0 { 0x8000 } else { 0x8800 };
 
-        if self.ly >= self.wpy {
-            let relative_line = self.ly - self.wpy;
+        if registers.ly >= registers.wpy {
+            let relative_line = registers.ly - registers.wpy;
             let start_tile_row = relative_line / TILE_HEIGHT;
             let pixel_row = relative_line % TILE_HEIGHT;
         
-            let mut pixel_col: u8 = self.wpx.wrapping_sub(7);
+            let mut pixel_col: u8 = registers.wpx.wrapping_sub(7);
 
             for x in 0..=20 {
                 // read tile number from tile map
@@ -605,7 +627,7 @@ impl PPU {
 
                         match self.hardware_model {
                             GameBoyModel::DMG => {
-                                let bg_color = (self.bg_palette & (3 << (color_idx * 2))) >> (color_idx * 2);
+                                let bg_color = (registers.bg_palette & (3 << (color_idx * 2))) >> (color_idx * 2);
                                 color_buffer[pixel_col as usize] = bg_color as u16;
                                 bg_attribs[pixel_col as usize] = color_idx;
                             }
@@ -613,7 +635,7 @@ impl PPU {
                             GameBoyModel::GBC => {
                                 let palette_color_idx = (tile_attribs.palette * 8) + (color_idx * 2);
     
-                                let palette_color: u16 = (self.cgb_bg_palette_data[palette_color_idx as usize] as u16) + ((self.cgb_bg_palette_data[(palette_color_idx + 1) as usize] as u16) << 8);
+                                let palette_color: u16 = (registers.cgb_bg_palette_data[palette_color_idx as usize] as u16) + ((registers.cgb_bg_palette_data[(palette_color_idx + 1) as usize] as u16) << 8);
     
                                 color_buffer[pixel_col as usize] = palette_color;
                                 bg_attribs[pixel_col as usize] = color_idx;
@@ -666,10 +688,12 @@ impl PPU {
     }
 
     fn read_oam_entry(&self, idx: u8) -> OAMEntry {
-        let y = self.oam[(idx as u16 * 4) as usize];
-        let x = self.oam[(idx  as u16 * 4 + 1) as usize];
-        let tile = self.oam[(idx as u16 * 4 + 2) as usize];
-        let flags = self.oam[(idx as u16 * 4 + 3) as usize];
+        let oam = self.oam.borrow();
+
+        let y = oam[(idx as u16 * 4) as usize];
+        let x = oam[(idx  as u16 * 4 + 1) as usize];
+        let tile = oam[(idx as u16 * 4 + 2) as usize];
+        let flags = oam[(idx as u16 * 4 + 3) as usize];
 
         OAMEntry {
             y,
@@ -686,7 +710,9 @@ impl PPU {
         }
     }
 
-    fn do_dma_transfer(&mut self, data: u8) {
+    fn do_dma_transfer(&self, data: u8) {
+        let mut oam = self.oam.borrow_mut();
+
         let addr: u16 = (data as u16) << 8;
         let mut data: [u8; 0xA0] = [0; 0xA0];
         
@@ -695,16 +721,18 @@ impl PPU {
         }
 
         for (i, datum) in data.iter().enumerate() {
-            self.oam[i as usize] = *datum;
+            oam[i as usize] = *datum;
         }
     }
 
     fn read_vram(&self, addr: u16, bank: u16) -> u8 {
-        self.vram[(addr - 0x8000 + bank * 0x2000) as usize]
+        let vram = self.vram.borrow();
+        vram[(addr - 0x8000 + bank * 0x2000) as usize]
     }
 
-    fn write_vram(&mut self, addr: u16, bank: u16, data: u8) {
-        self.vram[(addr - 0x8000 + bank * 0x2000) as usize] = data;
+    fn write_vram(&self, addr: u16, bank: u16, data: u8) {
+        let mut vram = self.vram.borrow_mut();
+        vram[(addr - 0x8000 + bank * 0x2000) as usize] = data;
     }
 }
 
@@ -712,7 +740,8 @@ impl IOMapped for PPU {
     fn read_byte(&self, address: u16) -> u8 {
         match address {
             0x8000..=0x9FFF => {
-                if self.mode != PPUMode::ReadVRAM {
+                let state = self.state.borrow();
+                if state.mode != PPUMode::ReadVRAM {
                     self.read_vram(address, self.vram_bank)
                 }
                 else {
@@ -723,61 +752,64 @@ impl IOMapped for PPU {
             },
 
             0xFE00..=0xFE9F => {
-                if self.mode != PPUMode::ReadVRAM && self.mode != PPUMode::ReadOAM {
-                    self.oam[(address - 0xFE00) as usize]
+                let state = self.state.borrow();
+                if state.mode != PPUMode::ReadVRAM && state.mode != PPUMode::ReadOAM {
+                    let oam = self.oam.borrow();
+                    oam[(address - 0xFE00) as usize]
                 }
                 else {
                     println!("OAM Invalid Read when in Mode3: OAM:{:#06x}", address);
-                    self.oam[(address - 0xFE00) as usize]
+                    let oam = self.oam.borrow();
+                    oam[(address - 0xFE00) as usize]
                     //     0xFF
                 }
             },
 
             // FF40 LCDC - LCD Control (R/W)
-            0xFF40 => self.lcdc,
+            0xFF40 => self.registers.borrow().lcdc,
 
             // FF41 STAT - LCDC Status (R/W)
             0xFF41 => {
-                if !get_flag2(self.lcdc, LCDCBits::LCDEnable as u8) {
+                if !get_flag2(self.registers.borrow().lcdc, LCDCBits::LCDEnable as u8) {
                     // disable bits 0-2 if LCD is off
-                    (0x80 | self.stat) & !0x7
+                    (0x80 | self.registers.borrow().stat) & !0x7
                 }
                 else {
-                    0x80 | self.stat
+                    0x80 | self.registers.borrow().stat
                 }
             },
 
             // FF42 SCY - Scroll Y
-            0xFF42 => self.scy, 
+            0xFF42 => self.registers.borrow().scy, 
 
             // FF43 SCX - Scroll X
-            0xFF43 => self.scx,
+            0xFF43 => self.registers.borrow().scx,
 
             // FF44 - LY - LCDC Y-Coordinate (R)
             0xFF44 => {
-                self.ly
+                self.registers.borrow().ly
             }
 
             // FF45 LYC - LY Compare (R/W)
-            0xFF45 => self.lyc,
+            0xFF45 => self.registers.borrow().lyc,
 
             // FF46 - OAM DMA - OAM DMA Transfer and Start Address (W)
             0xFF46 => 0,
 
             // FF47 - BGP - BG Palette Data (R/W)
-            0xFF47 => self.bg_palette,
+            0xFF47 => self.registers.borrow().bg_palette,
 
             // FF48 - OBP0 - Object Palette 0 Data (R/W)
-            0xFF48 => self.obj_palette0,
+            0xFF48 => self.registers.borrow().obj_palette0,
 
             // FF49 - OBP1 - Object Palette 1 Data (R/W) 
-            0xFF49 => self.obj_palette1,
+            0xFF49 => self.registers.borrow().obj_palette1,
 
             // FF4A WY - Window Y Position (R/W)
-            0xFF4A => self.wpy,
+            0xFF4A => self.registers.borrow().wpy,
 
             // FF4B WX - Window X Position minus 7 (R/W)
-            0xFF4B => self.wpx,
+            0xFF4B => self.registers.borrow().wpx,
             
             // FF51 HDMA1 - DMA Source, High
             // FF52 HDMA2 - DMA Source, Low
@@ -787,17 +819,18 @@ impl IOMapped for PPU {
 
             // FF55 HDMA5 - DMA Length/Mode/Start
             // 0xFF55 => (((!self.hdma_active) as u8) << 7) | self.hdma_length & 0x7F,
-            0xFF55 => self.hdma_length,
+            0xFF55 => self.registers.borrow().hdma_length,
             
             // FF68 BCPS/BGPI - Background Palette Index (CGB)
             0xFF68 => {
-                ((self.cgb_bg_palette_autoincrement as u8) << 7) | self.cgb_bg_palette_index
+                ((self.registers.borrow().cgb_bg_palette_autoincrement as u8) << 7) | self.registers.borrow().cgb_bg_palette_index
             },
 
             // FF69 BCPD/BGPD - Background Palette Data (CGB)
             0xFF69 => {
-                if self.mode != PPUMode::ReadVRAM {
-                    self.cgb_bg_palette_data[self.cgb_bg_palette_index as usize]
+                let state = self.state.borrow();
+                if state.mode != PPUMode::ReadVRAM {
+                    self.registers.borrow().cgb_bg_palette_data[self.registers.borrow().cgb_bg_palette_index as usize]
                 } 
                 else {
                     0
@@ -808,12 +841,15 @@ impl IOMapped for PPU {
         }
     }
 
-    fn write_byte(&mut self, address: u16, data: u8) {
+    fn write_byte(&self, address: u16, data: u8) {
+        let mut state = self.state.borrow_mut();
+
         match address {
             0x8000..=0x9FFF => {
-                let lcd_enabled = get_flag2(self.lcdc, LCDCBits::LCDEnable as u8);
+                let registers = self.registers.borrow();
+                let lcd_enabled = get_flag2(registers.lcdc, LCDCBits::LCDEnable as u8);
 
-                if !lcd_enabled || self.mode != PPUMode::ReadVRAM {
+                if !lcd_enabled || state.mode != PPUMode::ReadVRAM {
                     self.write_vram(address, self.vram_bank, data);
                 }
                 else {
@@ -823,118 +859,140 @@ impl IOMapped for PPU {
             },
 
             0xFE00..=0xFE9F => {
-                let lcd_enabled = get_flag2(self.lcdc, LCDCBits::LCDEnable as u8);
+                let registers = self.registers.borrow();
+                let lcd_enabled = get_flag2(registers.lcdc, LCDCBits::LCDEnable as u8);
 
-                if !lcd_enabled || (self.mode != PPUMode::ReadVRAM && self.mode != PPUMode::ReadOAM) {
-                    self.oam[(address - 0xFE00) as usize] = data;
+                if !lcd_enabled || (state.mode != PPUMode::ReadVRAM && state.mode != PPUMode::ReadOAM) {
+                    let mut oam = self.oam.borrow_mut();
+                    oam[(address - 0xFE00) as usize] = data;
                 }
                 else {
-                    println!("OAM Invalid Write when in Mode{}: OAM:{:#06x}", self.mode as u8, address);
-                    self.oam[(address - 0xFE00) as usize] = data; // THIS SHOULDNT BE DONE
+                    println!("OAM Invalid Write when in Mode{}: OAM:{:#06x}", state.mode as u8, address);
+                    let mut oam = self.oam.borrow_mut();
+                    oam[(address - 0xFE00) as usize] = data; // THIS SHOULDNT BE DONE
                 }
             }
 
             // FF40 LCDC - LCD Control (R/W)
             0xFF40 => {
-                let was_on = get_flag2(self.lcdc, LCDCBits::LCDEnable as u8);
-                self.lcdc = data;
-                let is_on = get_flag2(self.lcdc, LCDCBits::LCDEnable as u8);
+                let mut registers = self.registers.borrow_mut();
+
+                let was_on = get_flag2(registers.lcdc, LCDCBits::LCDEnable as u8);
+                registers.lcdc = data;
+                let is_on = get_flag2(registers.lcdc, LCDCBits::LCDEnable as u8);
 
                 if was_on && !is_on {
-                    self.disable_lcd();
+                    self.disable_lcd(&mut state, &mut registers);
                 }
                 else if !was_on && is_on {
-                    self.enable_lcd();
+                    self.enable_lcd(&mut registers);
                 }
             },
 
             // FF41 STAT - LCDC Status (R/W)
             0xFF41 => {
-                self.stat = 0x80 | (data & !0x7 | self.stat & 0x7);
+                let mut registers = self.registers.borrow_mut();
+                registers.stat = 0x80 | (data & !0x7 | registers.stat & 0x7);
 
-                if self.mode == PPUMode::HBlank || self.mode == PPUMode::VBlank {
-                    self.trigger_stat_quirk = true;
+                if state.mode == PPUMode::HBlank || state.mode == PPUMode::VBlank {
+                    state.trigger_stat_quirk = true;
                 }
             },
 
             // FF42 SCY - Scroll Y (R/W)
-            0xFF42 => self.scy = data,  
+            0xFF42 => self.registers.borrow_mut().scy = data,  
 
             // FF43 SCX - Scroll X (R/W)
-            0xFF43 => self.scx = data,
+            0xFF43 => self.registers.borrow_mut().scx = data,
 
             // FF44 - LY - LCDC Y-Coordinate (R)
             0xFF44 => {},
 
             // FF45 LYC - LY Compare (R/W)
             0xFF45 => {
-                self.lyc = data;
+                self.registers.borrow_mut().lyc = data;
             },
 
             // FF46 - OAM DMA - OAM DMA Transfer and Start Address (W)
             0xFF46 => {
-                self.dma_oam_active = true;
-                self.dma_oam_source = data;
+                self.registers.borrow_mut().dma_oam_active = true;
+                self.registers.borrow_mut().dma_oam_source = data;
             },
 
             // FF47 - BGP - BG Palette Data (R/W)
-            0xFF47 => self.bg_palette = data,
+            0xFF47 => self.registers.borrow_mut().bg_palette = data,
 
             // FF48 - OBP0 - Object Palette 0 Data (R/W)
-            0xFF48 => self.obj_palette0 = data,
+            0xFF48 => self.registers.borrow_mut().obj_palette0 = data,
 
             // FF49 - OBP1 - Object Palette 1 Data (R/W) 
-            0xFF49 => self.obj_palette1 = data,
+            0xFF49 => self.registers.borrow_mut().obj_palette1 = data,
 
             // FF4A WY - Window Y Position (R/W)
-            0xFF4A => self.wpy = data,
+            0xFF4A => self.registers.borrow_mut().wpy = data,
 
             // FF4B WX - Window X Position minus 7 (R/W)
-            0xFF4B => self.wpx = data,
+            0xFF4B => self.registers.borrow_mut().wpx = data,
 
             // FF51 HDMA1 - DMA Source, High
-            0xFF51 => self.hdma_source = (((data as u16) << 8) | (self.hdma_source & 0xFF)) & !0xF,
+            0xFF51 => {
+                let mut registers = self.registers.borrow_mut();
+                registers.hdma_source = (((data as u16) << 8) | (registers.hdma_source & 0xFF)) & !0xF;
+            }
 
             // FF52 HDMA2 - DMA Source, Low
-            0xFF52 => self.hdma_source = ((self.hdma_source & 0xFF00) | (data as u16)) & !0xF,
+            0xFF52 => { 
+                let mut registers = self.registers.borrow_mut();
+                registers.hdma_source = ((registers.hdma_source & 0xFF00) | (data as u16)) & !0xF;
+            }
 
             // FF53 HDMA3 - DMA Destination, High
-            0xFF53 => self.hdma_destination = (((data as u16) << 8) | (self.hdma_destination & 0xFF)) & 0x1FF0,
+            0xFF53 => {
+                let mut registers = self.registers.borrow_mut();
+                registers.hdma_destination = (((data as u16) << 8) | (registers.hdma_destination & 0xFF)) & 0x1FF0;
+            }
 
             // FF54 HDMA4 - DMA Destination, Low
-            0xFF54 => self.hdma_destination = ((self.hdma_destination & 0xFF00) | (data as u16)) & 0x1FF0,
+            0xFF54 => {
+                let mut registers = self.registers.borrow_mut();
+                registers.hdma_destination = ((registers.hdma_destination & 0xFF00) | (data as u16)) & 0x1FF0;
+            }
 
             // FF55 HDMA5 - DMA Length/Mode/Start
             0xFF55 => {
-                if self.hdma_active {
+                let mut registers = self.registers.borrow_mut();
+                if registers.hdma_active {
                     if get_bit(data, 7) == 0 {
-                        self.hdma_active = false;
-                        self.hdma_mode = 1;
+                        registers.hdma_active = false;
+                        registers.hdma_mode = 1;
                     }
-                    self.hdma_length = data & 0x7F;
+                    registers.hdma_length = data & 0x7F;
                 }
                 else {
-                    self.hdma_active = true;
+                    registers.hdma_active = true;
 
-                    self.hdma_mode = get_bit(data, 7);
-                    self.hdma_length = data & 0x7F;
+                    registers.hdma_mode = get_bit(data, 7);
+                    registers.hdma_length = data & 0x7F;
                 }
             }
 
             // FF68 BCPS/BGPI - Background Palette Index (CGB)
             0xFF68 => {
-                self.cgb_bg_palette_index = data & 0x1F;
-                self.cgb_bg_palette_autoincrement = data & 0x80 != 0;
+                let mut registers = self.registers.borrow_mut();
+                registers.cgb_bg_palette_index = data & 0x1F;
+                registers.cgb_bg_palette_autoincrement = data & 0x80 != 0;
             },
 
             // FF69 BCPD/BGPD - Background Palette Data (CGB)
             0xFF69 => {
+                let mut registers = self.registers.borrow_mut();
                 // if self.mode != PPUMode::ReadVRAM {
-                    self.cgb_bg_palette_data[self.cgb_bg_palette_index as usize] = data;
+                    let pidx = registers.cgb_bg_palette_index as usize;
+                    registers.cgb_bg_palette_data[pidx] = data;
 
-                    if self.cgb_bg_palette_autoincrement {
-                        self.cgb_bg_palette_index += 1;
-                        self.cgb_bg_palette_index %= 64;
+                    if registers.cgb_bg_palette_autoincrement {
+                        registers.cgb_bg_palette_index += 1;
+                        registers.cgb_bg_palette_index %= 64;
                     }
                 // } 
                 // else {
@@ -944,17 +1002,20 @@ impl IOMapped for PPU {
 
             // FF6A OCPS/OBPI - Object Palette Index (CGB)
             0xFF6A => {
-                self.cgb_obj_palette_index = data & 0x1F;
-                self.cgb_obj_palette_autoincrement = data & 0x80 != 0;
+                let mut registers = self.registers.borrow_mut();
+                registers.cgb_obj_palette_index = data & 0x1F;
+                registers.cgb_obj_palette_autoincrement = data & 0x80 != 0;
             },
 
             // FF6B OCPD/OBPD - Object Palette Data (CGB)
             0xFF6B => {
+                let mut registers = self.registers.borrow_mut();
                 // if self.mode != PPUMode::ReadVRAM {
-                    self.cgb_obj_palette_data[self.cgb_obj_palette_index as usize] = data;
+                    let pidx = registers.cgb_obj_palette_index as usize;
+                    registers.cgb_obj_palette_data[pidx] = data;
 
-                    if self.cgb_obj_palette_autoincrement {
-                        self.cgb_obj_palette_index += 1;
+                    if registers.cgb_obj_palette_autoincrement {
+                        registers.cgb_obj_palette_index += 1;
                     }
                 // } 
                 // else {

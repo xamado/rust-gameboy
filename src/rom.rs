@@ -112,8 +112,8 @@ impl IOMapped for ROM {
         }
     }
 
-    fn write_byte(&mut self, address: u16, data: u8) {
-        if let Some(mbc) = &mut self.mbc {
+    fn write_byte(&self, address: u16, data: u8) {
+        if let Some(mbc) = &self.mbc {
             mbc.write_byte(address, data);
         }
     }

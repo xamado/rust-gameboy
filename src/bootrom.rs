@@ -29,7 +29,7 @@ impl IOMapped for BootROM {
         self.data[address as usize]       
     }
 
-    fn write_byte(&mut self, address: u16, _data: u8) {
+    fn write_byte(&self, address: u16, _data: u8) {
         panic!("Invalid BOOTROM write {:#06x}", address);
     }
 }

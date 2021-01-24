@@ -24,7 +24,7 @@ impl MBC for MBC0 {
         
     }
 
-    fn write_byte(&mut self, _address: u16, _data: u8) {
+    fn write_byte(&self, _address: u16, _data: u8) {
         // panic!("Invalid ROM write {:#06x}", address)
     }
 }

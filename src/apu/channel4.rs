@@ -5,7 +5,6 @@ pub struct Channel4 {
     enabled: bool,
     pub dac_enabled: bool,
     pub trigger: bool,
-    output: u8,
     output_timer: i16,
     output_timer_period: u16,
     volume: u8,
@@ -22,7 +21,9 @@ pub struct Channel4 {
     pub envelope_timer: u8,
     pub envelope_direction: bool,
     pub envelope_period: u8,
-    pub envelope_initial: u8
+    pub envelope_initial: u8,
+    
+    accumulator_ch4: Vec<u8>,
 }
 
 impl Channel4 {
@@ -31,7 +32,6 @@ impl Channel4 {
             enabled: false,
             dac_enabled: false,
             trigger: false,
-            output: 0,
             output_timer: 0,
             output_timer_period: 0,
             volume: 0,
@@ -48,7 +48,9 @@ impl Channel4 {
             envelope_timer: 0,
             envelope_initial: 0,
             envelope_period: 0,
-            envelope_direction: false
+            envelope_direction: false,
+
+            accumulator_ch4: vec!(),
         }
     }
 
@@ -74,12 +76,14 @@ impl Channel4 {
         }
         
         // output volume
-        self.output = if self.enabled && self.dac_enabled && (self.lfsr & 0x01) == 0 {
+        let output = if self.enabled && self.dac_enabled && (self.lfsr & 0x01) == 0 {
             self.volume
         }
         else {
             0
-        }
+        };
+
+        self.accumulator_ch4.push(output);
     }
 
     pub fn tick_length_counter(&mut self) {
@@ -128,7 +132,10 @@ impl Channel4 {
         self.output_timer = self.output_timer_period as i16;
     }
 
-    pub fn get_output(&self) -> u8 {
-        self.output
+    pub fn get_output(&mut self) -> f32 {
+        let output = self.accumulator_ch4.iter().fold(0.0, |acc, v| acc + (*v as f32)) / (self.accumulator_ch4.len() as f32);
+        self.accumulator_ch4.clear();
+
+        output
     }
 }

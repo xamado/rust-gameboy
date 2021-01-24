@@ -12,10 +12,14 @@ pub struct Watchpoint {
     value: RefCell<u8>
 }
 
+struct DebuggerState {
+    stopped: bool,
+}
+
 pub struct Debugger {
     breakpoints: Vec<Breakpoint>,
     watchpoints: Vec<Watchpoint>,
-    stopped: bool,
+    state: RefCell<DebuggerState>,
 }
 
 impl Debugger {
@@ -23,21 +27,23 @@ impl Debugger {
         Self {
             breakpoints: vec!(),
             watchpoints: vec!(),
-            stopped: false
+            state: RefCell::new(DebuggerState {
+                stopped: false
+            }),
         }
     }
 
     pub fn is_stopped(&self) -> bool {
-        self.stopped
+        self.state.borrow().stopped
     }
 
-    pub fn resume(&mut self) {
-        self.stopped = false;
+    pub fn resume(&self) {
+        self.state.borrow_mut().stopped = false;
     }
 
-    pub fn stop(&mut self, cpu: &CPU, ppu: &PPU) {
+    pub fn stop(&self, cpu: &CPU, ppu: &PPU) {
         self.print_trace(cpu, ppu);
-        self.stopped = true;
+        self.state.borrow_mut().stopped = true;
     }
 
     pub fn add_breakpoint(&mut self, addr: u16) {
@@ -53,13 +59,13 @@ impl Debugger {
         });
     }
 
-    pub fn process(&mut self, cpu: &CPU, ppu: &PPU, bus: &MemoryBus) {
+    pub fn process(&self, cpu: &CPU, ppu: &PPU, bus: &MemoryBus) {
         let cpu_state = cpu.get_debug_state();
 
         for b in &self.breakpoints {
             if b.address == cpu_state.pc {
                 self.print_trace(&cpu, ppu);
-                self.stopped = true;
+                self.state.borrow_mut().stopped = true;
                 break;
             }
         }
@@ -77,11 +83,10 @@ impl Debugger {
     pub fn print_trace(&self, cpu: &CPU, ppu: &PPU) {
         let cpu_state = cpu.get_debug_state();
         let ppu_state = ppu.get_debug_state();
-        let instruction = cpu.get_next_instruction();
 
         println!("@{:#06X} {} | AF: {:#06X} | BC: {:#06X} | DE: {:#06X} | HL: {:#06X} | LY: {} | STAT: {:#04X} | LCDC: {:#04X} | CNT: {}", 
             cpu_state.pc, 
-            instruction.dissassembly, 
+            cpu_state.next_opcode, 
             cpu_state.af, 
             cpu_state.bc, 
             cpu_state.de, 
