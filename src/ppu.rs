@@ -1,4 +1,3 @@
-use std::rc::Rc;
 use std::cmp::Ordering;
 use core::cell::RefCell;
 
@@ -103,6 +102,7 @@ struct PPURegisters {
     hdma_destination: u16,
     hdma_mode: u8,
     hdma_length: u8,
+    vram_bank: u16,
 }
 
 struct PPUState {
@@ -113,12 +113,9 @@ struct PPUState {
 
 pub struct PPU {
     hardware_model: GameBoyModel,
-    bus: Rc<RefCell<MemoryBus>>,
-    screen: Rc<RefCell<Screen>>,
     registers: RefCell<PPURegisters>,
     state: RefCell<PPUState>,
     vram: RefCell<[u8; 0x4000]>,
-    vram_bank: u16,
     oam: RefCell<[u8; 0x100]>,
 }
 
@@ -126,13 +123,10 @@ pub struct PPU {
 // TODO: Unify state.mode and the lcdc register...
 
 impl PPU {
-    pub fn new(model: GameBoyModel, bus: Rc<RefCell<MemoryBus>>, screen: Rc<RefCell<Screen>>) -> Self {
+    pub fn new(model: GameBoyModel) -> Self {
         Self {
             hardware_model: model,
-            bus,
-            screen,
             vram: RefCell::new([0; 0x4000]),
-            vram_bank: 0,
             oam: RefCell::new([0; 0x100]),
             state: RefCell::new(PPUState {
                 mode: PPUMode::ReadOAM,
@@ -164,6 +158,7 @@ impl PPU {
                 hdma_destination: 0,
                 hdma_mode: 0,
                 hdma_length: 0,
+                vram_bank: 0,
             }),            
         }
     }
@@ -198,9 +193,9 @@ impl PPU {
         }
     }
     
-    pub fn set_vram_bank(&mut self, bank: u8) {
+    pub fn set_vram_bank(&self, bank: u8) {
         match self.hardware_model {
-            GameBoyModel::GBC => self.vram_bank = bank as u16,
+            GameBoyModel::GBC => self.registers.borrow_mut().vram_bank = bank as u16,
             GameBoyModel::DMG => {}
         }        
     }
@@ -208,7 +203,7 @@ impl PPU {
     pub fn get_vram_bank(&self) -> u8 {
         match self.hardware_model {
             GameBoyModel::DMG => 0xFF,
-            GameBoyModel::GBC => 0xFE & ((self.vram_bank as u8) & 0x1)
+            GameBoyModel::GBC => 0xFE & ((self.registers.borrow().vram_bank as u8) & 0x1)
         }
     }
 
@@ -222,12 +217,12 @@ impl PPU {
         oam[addr as usize] = data;
     }
 
-    pub fn tick(&self) {
+    pub fn tick(&self, bus: &MemoryBus, screen: &mut Screen) {
         let mut registers = self.registers.borrow_mut();
 
         // Do HDMA or DMA transfers to VRAM/OAM memory
-        self.handle_dma(&mut registers);
-        self.handle_hdma(&mut registers);
+        self.handle_dma(bus, &mut registers);
+        self.handle_hdma(bus, &mut registers);
         
         // HACK: In DMG writing anything to STAT while in HBLANK or VBLANK causes bit 1 of the IF register (0xFF0F) to be set
         // Roadrash and Legend of Zerd depend on this bug
@@ -242,7 +237,6 @@ impl PPU {
             return;
         }
 
-        
         state.line_cycles += 1;
         
         match state.mode {
@@ -250,7 +244,7 @@ impl PPU {
             PPUMode::ReadOAM => { 
                 // wait for 80 cycles, then go to mode VRAM READ MODE
                 if state.line_cycles == 80 {
-                    self.set_mode(PPUMode::ReadVRAM, &mut state, &mut registers);
+                    self.set_mode(bus, &mut state, &mut registers, PPUMode::ReadVRAM);
                 }
             },
 
@@ -258,14 +252,14 @@ impl PPU {
             PPUMode::ReadVRAM => {
                 if state.line_cycles == 252 { // 172 cycles + 80 from mode 2
                     // draw scanline
-                    self.render_scanline(&registers);
+                    self.render_scanline(&registers, screen);
 
-                    self.set_mode(PPUMode::HBlank, &mut state, &mut registers);
+                    self.set_mode(bus, &mut state, &mut registers, PPUMode::HBlank);
                 }
                 
                 // HBlank STAT interrupt happens 1 cycle before mode switch
                 else if state.line_cycles == 248 && get_flag2(registers.stat, STATBits::Mode0HBlankCheckEnable as u8) {
-                    self.raise_interrupt(Interrupts::LCDStat);
+                    self.raise_interrupt(bus, Interrupts::LCDStat);
                 }
             },
 
@@ -279,13 +273,13 @@ impl PPU {
                     registers.ly = (ly + 1) % MAX_SCANLINES;
 
                     // check if LY = LYC if enabled (bit 6)
-                    self.check_lyc_compare(&mut registers);
+                    self.check_lyc_compare(bus, &mut registers);
 
                     if registers.ly == VBLANK_LINE { // ly = 144 
-                        self.set_mode(PPUMode::VBlank, &mut state, &mut registers);
+                        self.set_mode(bus, &mut state, &mut registers, PPUMode::VBlank);
                     }
                     else {
-                        self.set_mode(PPUMode::ReadOAM, &mut state, &mut registers);
+                        self.set_mode(bus, &mut state, &mut registers, PPUMode::ReadOAM);
                     }
                 }
             },
@@ -299,42 +293,40 @@ impl PPU {
                     registers.ly = (registers.ly + 1) % MAX_SCANLINES;
                     
                     // compare LY=LYC
-                    self.check_lyc_compare(&mut registers);
+                    self.check_lyc_compare(bus, &mut registers);
 
                     if registers.ly == 0 {
-                        self.screen.borrow_mut().set_vblank(true);
-                        self.set_mode(PPUMode::ReadOAM, &mut state, &mut registers);
+                        screen.set_vblank(true);
+                        self.set_mode(bus, &mut state, &mut registers, PPUMode::ReadOAM);
                     }
                 }
             }
         }
     }
 
-    fn handle_dma(&self, registers: &mut PPURegisters) {
+    fn handle_dma(&self, bus: &MemoryBus, registers: &mut PPURegisters) {
         // in theory dma copy takes a while... in fact:
         // This copy needs 160 × 4 + 4 clocks to
         // complete in both double speed and single speeds modes. The copy starts after the 4 setup clocks,
         // and a new byte is copied every 4 clocks.
         if registers.dma_oam_active {
-            self.do_dma_transfer(registers.dma_oam_source);
+            self.do_dma_transfer(bus, registers.dma_oam_source);
             registers.dma_oam_active = false;
         }
     }
 
-    fn handle_hdma(&self, registers: &mut PPURegisters) {
+    fn handle_hdma(&self, bus: &MemoryBus, registers: &mut PPURegisters) {
         if registers.hdma_active && registers.hdma_mode == 0 {
             while registers.hdma_length != 0xFF {
-                self.hdma_copy_block(registers);
+                self.hdma_copy_block(bus, registers);
             }
         }
     }
 
-    fn hdma_copy_block(&self, registers: &mut PPURegisters) {
-        let bus = self.bus.borrow();
-
+    fn hdma_copy_block(&self, bus: &MemoryBus, registers: &mut PPURegisters) {
         for _ in 0..16 {
             let b = bus.read_byte(registers.hdma_source);
-            self.write_vram(0x8000 + registers.hdma_destination, self.vram_bank, b);
+            self.write_vram(0x8000 + registers.hdma_destination, registers.vram_bank, b);
 
             registers.hdma_source = registers.hdma_source.wrapping_add(1);
             registers.hdma_destination = registers.hdma_destination.wrapping_add(1);
@@ -347,34 +339,34 @@ impl PPU {
         }
     }
 
-    fn set_mode(&self, mode: PPUMode, state: &mut PPUState, registers: &mut PPURegisters) {
+    fn set_mode(&self, bus: &MemoryBus, state: &mut PPUState, registers: &mut PPURegisters, mode: PPUMode) {
         state.mode = mode;
         registers.stat = registers.stat & 0x7C | (state.mode as u8);
 
         match state.mode {
             PPUMode::HBlank => {
                 if registers.hdma_active && registers.hdma_mode == 1 {
-                    self.hdma_copy_block(registers);
+                    self.hdma_copy_block(bus, registers);
                 }
             },
 
             PPUMode::VBlank => {
                 // raise the VBlank interrupt
-                self.raise_interrupt(Interrupts::VBlank);
+                self.raise_interrupt(bus, Interrupts::VBlank);
 
                 if get_flag2(registers.stat, STATBits::Mode1VBlankCheckEnable as u8) {
-                    self.raise_interrupt(Interrupts::LCDStat);
+                    self.raise_interrupt(bus, Interrupts::LCDStat);
                 }
 
                 // vbl stat also triggers with oam check
                 if get_flag2(registers.stat, STATBits::Mode2OAMCheckEnable as u8) {
-                    self.raise_interrupt(Interrupts::LCDStat);
+                    self.raise_interrupt(bus, Interrupts::LCDStat);
                 }
             },
 
             PPUMode::ReadOAM => {
                 if get_flag2(registers.stat, STATBits::Mode2OAMCheckEnable as u8) {
-                    self.raise_interrupt(Interrupts::LCDStat);
+                    self.raise_interrupt(bus, Interrupts::LCDStat);
                 }
             }
 
@@ -384,21 +376,21 @@ impl PPU {
         }
     }
 
-    fn check_lyc_compare(&self, registers: &mut PPURegisters) {
+    fn check_lyc_compare(&self, bus: &MemoryBus, registers: &mut PPURegisters) {
         // update bit 2 with the comparison result
         let ly_eq_lyc = registers.ly == registers.lyc;
         set_flag2(&mut registers.stat, STATBits::LYCComparisonSignal as u8, ly_eq_lyc);
 
         if get_flag2(registers.stat, STATBits::LYCCheckEnable as u8) && ly_eq_lyc {
             // raise the stat interrupt
-            self.raise_interrupt(Interrupts::LCDStat);
+            self.raise_interrupt(bus, Interrupts::LCDStat);
         }
     }
 
-    fn raise_interrupt(&self, interrupt: Interrupts) {
-        let mut iif = self.bus.borrow().read_byte(0xFF0F);
+    fn raise_interrupt(&self, bus: &MemoryBus, interrupt: Interrupts) {
+        let mut iif = bus.read_byte(0xFF0F);
         iif |= 1 << interrupt as u8;
-        self.bus.borrow().write_byte(0xFF0F, iif);
+        bus.write_byte(0xFF0F, iif);
     }
 
     fn disable_lcd(&self, state: &mut PPUState, registers: &mut PPURegisters) {
@@ -443,7 +435,7 @@ impl PPU {
         visible_sprites
     }
 
-    fn render_scanline(&self, registers: &PPURegisters) {
+    fn render_scanline(&self, registers: &PPURegisters, screen: &mut Screen) {
         let bg_enabled = get_flag2(registers.lcdc, LCDCBits::BGWindowDisplayPriority as u8);
         let w_enabled = get_flag2(registers.lcdc, LCDCBits::WindowEnable as u8);
         let obj_enabled = get_flag2(registers.lcdc, LCDCBits::OBJDisplayEnable as u8);
@@ -516,7 +508,7 @@ impl PPU {
             }
         }
 
-        self.screen.borrow_mut().set_scanline(registers.ly as u8, &bg_buffer);
+        screen.set_scanline(registers.ly as u8, &bg_buffer);
     }
     
     fn draw_background(&self, color_buffer: &mut [u16; 160], bg_attribs: &mut [u8; 160], registers: &PPURegisters) {
@@ -710,14 +702,14 @@ impl PPU {
         }
     }
 
-    fn do_dma_transfer(&self, data: u8) {
+    fn do_dma_transfer(&self, bus: &MemoryBus, data: u8) {
         let mut oam = self.oam.borrow_mut();
 
         let addr: u16 = (data as u16) << 8;
         let mut data: [u8; 0xA0] = [0; 0xA0];
         
         for (i, datum) in data.iter_mut().enumerate() {
-            *datum = self.read_byte(addr + (i as u16));
+            *datum = bus.read_byte(addr + (i as u16));
         }
 
         for (i, datum) in data.iter().enumerate() {
@@ -742,11 +734,11 @@ impl IOMapped for PPU {
             0x8000..=0x9FFF => {
                 let state = self.state.borrow();
                 if state.mode != PPUMode::ReadVRAM {
-                    self.read_vram(address, self.vram_bank)
+                    self.read_vram(address, self.registers.borrow().vram_bank)
                 }
                 else {
-                    println!("VRAM Invalid Read when in Mode3: VRAM{}:{:#06x}", self.vram_bank, address);
-                    self.read_vram(address, self.vram_bank) // THIS SHOULDNT BE DONE, WE SHOULD RETURN 0xFF
+                    println!("VRAM Invalid Read when in Mode3: VRAM{}:{:#06x}", self.registers.borrow_mut().vram_bank, address);
+                    self.read_vram(address, self.registers.borrow_mut().vram_bank) // THIS SHOULDNT BE DONE, WE SHOULD RETURN 0xFF
                     // 0xFF
                 }
             },
@@ -837,7 +829,7 @@ impl IOMapped for PPU {
                 }
             },
             
-            _ => self.bus.borrow().read_byte(address)
+            _ => panic!("Invalid read")
         }
     }
 
@@ -846,15 +838,15 @@ impl IOMapped for PPU {
 
         match address {
             0x8000..=0x9FFF => {
-                let registers = self.registers.borrow();
+                let registers = self.registers.borrow_mut();
                 let lcd_enabled = get_flag2(registers.lcdc, LCDCBits::LCDEnable as u8);
 
                 if !lcd_enabled || state.mode != PPUMode::ReadVRAM {
-                    self.write_vram(address, self.vram_bank, data);
+                    self.write_vram(address, registers.vram_bank, data);
                 }
                 else {
-                    println!("VRAM Invalid Write when in Mode3: VRAM{}:{:#06x}", self.vram_bank, address);
-                    self.write_vram(address, self.vram_bank, data); // THIS SHOULDNT BE DONE
+                    println!("VRAM Invalid Write when in Mode3: VRAM{}:{:#06x}", registers.vram_bank, address);
+                    self.write_vram(address, registers.vram_bank, data); // THIS SHOULDNT BE DONE
                 }
             },
 
@@ -1023,7 +1015,7 @@ impl IOMapped for PPU {
                 // }
             },
 
-            _ => self.bus.borrow().write_byte(address, data)
+            _ => panic!("Invalid read")
         }
     }
 }

@@ -22,7 +22,9 @@ impl Screen {
         }
     }
 
-    pub fn get_framebuffer(&self) -> &[u32] {
+    pub fn get_framebuffer(&mut self) -> &[u32] {
+        self.vblank = false;
+        
         &self.framebuffer
     }
 

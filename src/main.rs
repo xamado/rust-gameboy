@@ -133,7 +133,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 is_pressed: value,
                 ..
             })) if key == Keycode::A => {
-                machine.get_joystick().borrow_mut().inject(JoystickButton::Start, value);
+                machine.inject_input(JoystickButton::Start, value);
             }
 
             Some(Event::Keyboard(KeyboardEvent {
@@ -141,7 +141,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 is_pressed: value,
                 ..
             })) if key == Keycode::S => {
-                machine.get_joystick().borrow_mut().inject(JoystickButton::Select, value);
+                machine.inject_input(JoystickButton::Select, value);
             }
 
             Some(Event::Keyboard(KeyboardEvent {
@@ -149,7 +149,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 is_pressed: value,
                 ..
             })) if key == Keycode::Z => {
-                machine.get_joystick().borrow_mut().inject(JoystickButton::A, value);
+                machine.inject_input(JoystickButton::A, value);
             }
 
             Some(Event::Keyboard(KeyboardEvent {
@@ -157,7 +157,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 is_pressed: value,
                 ..
             })) if key == Keycode::X => {
-                machine.get_joystick().borrow_mut().inject(JoystickButton::B, value);
+                machine.inject_input(JoystickButton::B, value);
             }
 
             Some(Event::Keyboard(KeyboardEvent {
@@ -165,7 +165,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 is_pressed: value,
                 ..
             })) if key == Keycode::LEFT => {
-                machine.get_joystick().borrow_mut().inject(JoystickButton::Left, value);
+                machine.inject_input(JoystickButton::Left, value);
             }
 
             Some(Event::Keyboard(KeyboardEvent {
@@ -173,7 +173,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 is_pressed: value,
                 ..
             })) if key == Keycode::RIGHT => {
-                machine.get_joystick().borrow_mut().inject(JoystickButton::Right, value);
+                machine.inject_input(JoystickButton::Right, value);
             }
 
             Some(Event::Keyboard(KeyboardEvent {
@@ -181,7 +181,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 is_pressed: value,
                 ..
             })) if key == Keycode::UP => {
-                machine.get_joystick().borrow_mut().inject(JoystickButton::Up, value);
+                machine.inject_input(JoystickButton::Up, value);
             }
 
             Some(Event::Keyboard(KeyboardEvent {
@@ -189,7 +189,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 is_pressed: value,
                 ..
             })) if key == Keycode::DOWN => {
-                machine.get_joystick().borrow_mut().inject(JoystickButton::Down, value);
+                machine.inject_input(JoystickButton::Down, value);
             }
 
             Some(Event::Keyboard(KeyboardEvent {
@@ -221,8 +221,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         'emulator_loop: loop {
             machine.step();
 
-            let screen = machine.get_screen().borrow();
-            if screen.is_vblank() {
+            if machine.is_vblank() {
                 break 'emulator_loop;
             }    
 
@@ -231,8 +230,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        let mut screen = machine.get_screen().borrow_mut();
-        if screen.is_vblank() {
+        if machine.is_vblank() {
             // Queue audio samples first
             let audio_buffer = machine.get_audio_buffer();
             let len = audio_buffer.len();
@@ -243,7 +241,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             // Update pixels' framebuffer
-            let fb = screen.get_framebuffer();
+            let fb = machine.get_framebuffer();
             let frame = pixels.get_frame();
             for (i, pixel) in frame.chunks_exact_mut(4).enumerate() {
                 let c = fb[i];
@@ -255,7 +253,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // Draw the current frame
             pixels.render()?;
-            screen.set_vblank(false);
 
             // Sync to 60hz, only if we have enough audio samples
             let elapsed = instant.elapsed().as_secs_f32();

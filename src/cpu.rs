@@ -1,7 +1,6 @@
 use crate::memorybus::MemoryBus;
 use crate::bitutils::*;
 use crate::machine::GameBoyModel;
-use crate::iomapped::IOMapped;
 
 use hashbrown::HashMap;
 use core::cell::RefCell;

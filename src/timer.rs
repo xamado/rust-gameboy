@@ -1,4 +1,3 @@
-use std::rc::Rc;
 use core::cell::RefCell;
 
 use crate::iomapped::IOMapped;
@@ -16,7 +15,6 @@ struct TimerRegisters {
 }
 
 pub struct Timer {
-    bus: Rc<RefCell<MemoryBus>>,
     registers: RefCell<TimerRegisters>,
     prev_and_result: RefCell<u8>
 }
@@ -29,9 +27,8 @@ const TIMER_FREQ_BIT : [u8; 4] = [
 ];
 
 impl Timer {
-    pub fn new(bus: Rc<RefCell<MemoryBus>>) -> Self {
+    pub fn new() -> Self {
         Self {
-            bus,
             registers: RefCell::new(TimerRegisters {
                 timer_enabled: false,
                 timer_frequency: 0,
@@ -46,7 +43,7 @@ impl Timer {
         }
     }
 
-    pub fn tick(&self) {
+    pub fn tick(&self, bus: &MemoryBus) {
         let mut registers = self.registers.borrow_mut();
 
         registers.internal_counter = registers.internal_counter.wrapping_add(1);
@@ -59,8 +56,8 @@ impl Timer {
                 registers.timer_counter = registers.timer_modulo;
 
                 // raise the Timer interrupt
-                let iif = self.bus.borrow().read_byte(0xFF0F) | (1 << Interrupts::Timer as u8);
-                self.bus.borrow().write_byte(0xFF0F, iif);
+                let iif = bus.read_byte(0xFF0F) | (1 << Interrupts::Timer as u8);
+                bus.write_byte(0xFF0F, iif);
 
                 registers.timer_overflow = false;
                 registers.timer_overflow_counter = 0;
