@@ -2,7 +2,7 @@ use self::channel1::Channel1;
 use self::channel2::Channel2;
 use self::channel3::Channel3;
 use self::channel4::Channel4;
-
+use crate::bitutils::*;
 mod channel1;
 mod channel2;
 mod channel3;
@@ -12,6 +12,9 @@ const FRAME_SEQUENCER_PERIOD: u16 = 8192; // clocks
 
 struct APURegisters {
     sound_enabled: bool,
+    enabled_terminals: u8,
+    left_volume: u8,
+    right_volume: u8,
 }
 
 struct APUState {
@@ -40,6 +43,9 @@ impl APU {
             },
             registers: APURegisters {
                 sound_enabled: false,
+                enabled_terminals: 0,
+                left_volume: 0,
+                right_volume: 0,
             },
             channel1: Channel1::new(),
             channel2: Channel2::new(),
@@ -88,21 +94,29 @@ impl APU {
         let sound4: f32 = self.channel4.get_output();
 
         // DAC
-        let dac_output_ch1 = sound1 / 15.0;
-        let dac_output_ch2 = sound2 / 15.0;
-        let dac_output_ch3 = sound3 / 15.0;
-        let dac_output_ch4 = sound4 / 15.0;
+        let dac_output_ch1 = if self.channel1.dac_enabled { (sound1 / 15.0) * 2.0 - 1.0 } else { 0.0 };
+        let dac_output_ch2 = if self.channel2.dac_enabled { (sound2 / 15.0) * 2.0 - 1.0 } else { 0.0 };
+        let dac_output_ch3 = if self.channel3.dac_enabled { (sound3 / 15.0) * 2.0 - 1.0 } else { 0.0 };
+        let dac_output_ch4 = if self.channel4.dac_enabled { (sound4 / 15.0) * 2.0 - 1.0 } else { 0.0 };
 
         // mixer - average the 4 DAC outputs
-        let left_sample = (dac_output_ch1 + dac_output_ch2 + dac_output_ch3 + dac_output_ch4) / 4.0;
-        let right_sample = (dac_output_ch1 + dac_output_ch2 + dac_output_ch3 + dac_output_ch4) / 4.0;
+        let mut right_sample = (dac_output_ch1 * get_bit(self.registers.enabled_terminals, 0) as f32 + 
+                            dac_output_ch2 * get_bit(self.registers.enabled_terminals, 1) as f32 + 
+                            dac_output_ch3 * get_bit(self.registers.enabled_terminals, 2) as f32 + 
+                            dac_output_ch4 * get_bit(self.registers.enabled_terminals, 3) as f32 
+                        ) / 4.0;
+        let mut left_sample = (dac_output_ch1 * get_bit(self.registers.enabled_terminals, 4) as f32 + 
+                            dac_output_ch2 * get_bit(self.registers.enabled_terminals, 5) as f32 + 
+                            dac_output_ch3 * get_bit(self.registers.enabled_terminals, 6) as f32 + 
+                            dac_output_ch4 * get_bit(self.registers.enabled_terminals, 7) as f32
+                        ) / 4.0;
 
         // L/R volume control
-        let left_volume = 1.0;
-        let right_volume = 1.0;
-
-        let left = (left_sample * left_volume * (i16::MAX as f32)) as i16;
-        let right = (right_sample * right_volume * (i16::MAX as f32)) as i16;
+        right_sample = (right_sample * self.registers.left_volume as f32 + 1.0) / 8.0;
+        left_sample = (left_sample * self.registers.right_volume as f32 + 1.0) / 8.0;
+        
+        let left = (left_sample * (i16::MAX as f32)) as i16;
+        let right = (right_sample * (i16::MAX as f32)) as i16;
 
         self.samples.push(left);
         self.samples.push(right);
@@ -142,90 +156,31 @@ impl APU {
     pub fn read_byte(&self, address: u16) -> u8 {
         match address { 
             // Channel 1
-            0xFF10 => {
-                ((self.channel1.sweep_period & 0x70) << 4) | 
-                (self.channel1.sweep_direction as u8) << 3 |
-                (self.channel1.sweep_shift & 0x07)
-            },
-
-            0xFF11 => ((self.channel1.duty & 0x3) << 2) | (self.channel1.length_counter & 0x3F),
-
-            0xFF12 => {
-                (self.channel1.envelope_initial & 0x0F << 4) |
-                (self.channel1.envelope_direction as u8) << 3 |
-                (self.channel1.envelope_period & 0x7)
-            },
-
-            0xFF13 => {
-                (self.channel1.frequency & 0xFF) as u8
-            },
-
-            0xFF14 => {
-                ((self.channel1.frequency & 0x0700) >> 8) as u8 |
-                (self.channel1.trigger as u8) << 7 |
-                (self.channel1.length_counter_enabled as u8) << 6
-            },
+            0xFF10..=0xFF14 => self.channel1.read_register(address),
 
             // Channel 2
-            0xFF16 => ((self.channel2.duty & 0x3) << 2) | (self.channel2.length_counter & 0x3F),
+            0xFF16..=0xFF19 => self.channel2.read_register(address),
 
-            0xFF17 => {
-                (self.channel2.envelope_initial & 0x0F << 4) |
-                (self.channel2.envelope_direction as u8) << 3 |
-                (self.channel2.envelope_period & 0x7)
-            },
-
-            0xFF18 => {
-                (self.channel2.frequency & 0xFF) as u8
-            },
-
-            0xFF19 => {
-                ((self.channel2.frequency & 0x0700) >> 8) as u8 |
-                (self.channel2.trigger as u8) << 7 |
-                (self.channel2.length_counter_enabled as u8) << 6
-            },
-
-            // NR30 - Channel 3 Sound on/off (RW)
-            0xFF1A => (self.channel3.dac_enabled as u8) << 7,
-
-            // NR31 - Channel 3 Sound Length
-            0xFF1B => self.channel3.length_counter,
-
-            // NR32 - Channel 3 Select output level
-            0xFF1C => (self.channel3.output_level & 0x3) << 5,
-
-            // NR33 - Channel 3 Frequency lo
-            0xFF1D => (self.channel3.frequency & 0xFF) as u8,
-
-            // NR34 - Channel 3 Frequency hi
-            0xFF1E => {
-                ((self.channel3.trigger as u8) << 7) |
-                ((self.channel3.length_counter_enabled as u8) << 6) |
-                ((self.channel3.frequency & 0x700) >> 8) as u8
-            }
+            // Channel 3
+            0xFF1A..=0xFF1E => self.channel3.read_register(address),
 
             // NR41 - Channel 4 Sound Length (R/W)
-            0xFF20 => self.channel4.length_counter & 0x1F | 0xFF,
+            0xFF20..=0xFF23 => self.channel4.read_register(address),
 
-            // NR42 - Channel 4 Volume Envelope (R/W)
-            0xFF21 => {
-                self.channel4.envelope_initial << 4 |
-                (self.channel4.envelope_direction as u8) << 3 |
-                self.channel4.envelope_period & 0x3 
-            }
+            // NR51 - Selection of Sound output terminal (R/W)
+            0xFF25 => {
+                self.registers.enabled_terminals
+            },
 
-            // NR43 - Channel 4 Polynomial Counter (R/W)
-            0xFF22 => {
-                self.channel4.divisor_shift << 4 |
-                (self.channel4.width as u8) << 3 |
-                self.channel4.divisor & 0x3 
-            }
+            // FF26 - NR52 - Sound on/off
+            0xFF26 => {
+                0x70 | 
+                (self.registers.sound_enabled as u8) << 7 |
+                (self.channel4.enabled as u8) << 3 |
+                (self.channel3.enabled as u8) << 2 |
+                (self.channel2.enabled as u8) << 1 |
+                (self.channel1.enabled as u8)
 
-            // NR44 - Channel 4 Counter/consecutive; Inital (R/W)
-            0xFF23 => {
-                (self.channel4.trigger as u8) << 7 |
-                (self.channel4.length_counter_enabled as u8) << 6 |
-                0xBF
             }
             
             _ => { /*println!("Invalid APU read");*/ 0 }
@@ -234,139 +189,27 @@ impl APU {
 
     pub fn write_byte(&mut self, address: u16, data: u8) {
         match address {
-            // NR10 Channel 1 Sweep Register (R/W)
-            0xFF10 => {
-                self.channel1.sweep_period = (data & 0x70) >> 4;
-                self.channel1.sweep_direction = (data & 0x08) != 0;
-                self.channel1.sweep_shift = data & 0x07;
+            // Channel 1
+            0xFF10..=0xFF14 => self.channel1.write_register(address, data),
+
+            // Channel 2
+            0xFF16..=0xFF19 => self.channel2.write_register(address, data),
+
+            // Channel 3
+            0xFF1A..=0xFF1E | 0xFF30..=0xFF3F => self.channel3.write_register(address, data),
+
+            // Channel 4
+            0xFF20..=0xFF23 => self.channel4.write_register(address, data),
+
+            // NR50 - Channel control / Volume
+            0xFF24 => {
+                self.registers.left_volume = (data & 0x70) >> 4;
+                self.registers.right_volume = data & 0x7;
             }
 
-            // NR11 - Channel 1 Sound length / Wave pattern duty (R/W)
-            0xFF11 => {
-                self.channel1.length_counter = 64 - (data & 0x3F);
-                self.channel1.duty = data >> 6;
-            },
-
-            // NR12 - Channel 1 Volume Envelope (R/W)
-            0xFF12 => {
-                self.channel1.envelope_initial = data >> 4;
-                self.channel1.envelope_direction = data & 0x08 != 0;
-                self.channel1.envelope_period = data & 0x07;
-                self.channel1.dac_enabled = data & 0xF8 != 0;
-                
-                self.channel1.envelope_timer = self.channel1.envelope_period;
-            }
-
-            // NR13 - Channel 1 Frequency lo (W)
-            0xFF13 => {
-                self.channel1.frequency = (self.channel1.frequency & 0xFF00) | (data as u16);
-            },
-
-            // NR14 - Channel 1 Frequency hi (R/W)
-            0xFF14 => {
-                self.channel1.frequency = (((data as u16) & 0x07) << 8) | (self.channel1.frequency & 0x00FF);
-                self.channel1.length_counter_enabled = data & 0x40 != 0;
-                self.channel1.trigger = (data & 0x80) != 0;
-
-                if self.channel1.trigger {
-                    self.channel1.trigger_channel();
-                }
-            },
-
-
-
-            // NR21 - Channel 2 Sound length / Wave pattern duty (R/W)
-            0xFF16 => {
-                self.channel2.length_counter = 64 - (data & 0x3F);
-                self.channel2.duty = data >> 6;
-            },
-
-            // NR22 - Channel 2 Volume Envelope (R/W)
-            0xFF17 => {
-                self.channel2.envelope_initial = data >> 4;
-                self.channel2.envelope_direction = data & 0x08 != 0;
-                self.channel2.envelope_period = data & 0x07;
-                self.channel2.dac_enabled = data & 0xF8 != 0;
-                
-                self.channel2.envelope_timer = self.channel2.envelope_period;
-            }
-
-            // NR23 - Channel 2 Frequency lo (W)
-            0xFF18 => {
-                self.channel2.frequency = (self.channel2.frequency & 0xFF00) | (data as u16);
-            },
-
-            // NR24 - Channel 2 Frequency hi (R/W)
-            0xFF19 => {
-                self.channel2.frequency = (((data as u16) & 0x07) << 8) | (self.channel2.frequency & 0x00FF);
-                self.channel2.length_counter_enabled = data & 0x40 != 0;
-                self.channel2.trigger = (data & 0x80) != 0;
-
-                if self.channel2.trigger {
-                    self.channel2.trigger_channel();
-                }
-            },
-            
-            // NR30 - Channel 3 Sound on/off (RW)
-            0xFF1A => self.channel3.dac_enabled = (data & 0x80) != 0,
-
-            // NR31 - Channel 3 Sound Length
-            0xFF1B => self.channel3.length_counter = 255 - data,
-
-            // NR32 - Channel 3 Select output level
-            0xFF1C => self.channel3.output_level = (data & 0x60) >> 5,
-
-            // NR33 - Channel 3 Frequency lo
-            0xFF1D => self.channel3.frequency = (self.channel3.frequency & 0xFF00) | (data as u16),
-
-            // NR34 - Channel 3 Frequency hi
-            0xFF1E => {
-                self.channel3.frequency = (((data as u16) & 0x07) << 8) | (self.channel3.frequency & 0x00FF);
-                self.channel3.length_counter_enabled = data & 0x40 != 0;
-                self.channel3.trigger = (data & 0x80) != 0;
-
-                if self.channel3.trigger {
-                    self.channel3.trigger_channel();
-                }
-            },
-
-            // FF30-FF3F - Channel 3 Wave Pattern RAM
-            0xFF30..=0xFF3F => {
-                let idx = (address - 0xFF30) as usize;
-                self.channel3.waveform_data[idx] = data;
-            },
-
-            // NR41 - Channel 4 Sound Length (R/W)
-            0xFF20 => {
-                self.channel4.length = data & 0x1F;
-                self.channel4.length_counter = 64 - self.channel4.length;
-            },
-
-            // NR42 - Channel 4 Volume Envelope (R/W)
-            0xFF21 => {
-                self.channel4.envelope_initial = data >> 4;
-                self.channel4.envelope_direction = data & 0x08 != 0;
-                self.channel4.envelope_period = data & 0x07;
-                self.channel4.dac_enabled = data & 0xF8 != 0;
-
-                self.channel4.envelope_timer = self.channel4.envelope_period;
-            },
-
-            // NR43 - Channel 4 Polynomial Counter (R/W)
-            0xFF22 => {
-                self.channel4.divisor_shift = (data & 0xF0) >> 4;
-                self.channel4.width = (data & 0x08) != 0;
-                self.channel4.divisor = data & 0x07;
-            },
-
-            // NR44 - Channel 4 Counter/consecutive; Inital (R/W)
-            0xFF23 => {
-                self.channel4.length_counter_enabled = (data & 0x40) != 0;
-                self.channel4.trigger = (data & 0x80) != 0;
-                
-                if self.channel4.trigger {
-                    self.channel4.trigger_channel();
-                }
+            // NR51 - Selection of Sound output terminal (R/W)
+            0xFF25 => {
+                self.registers.enabled_terminals = data;
             },
 
             // NR52

@@ -2,26 +2,24 @@
 const DIVISORS: [u8; 8] = [ 8, 16, 32, 48, 64, 80, 96, 112 ]; 
 
 pub struct Channel4 {
-    enabled: bool,
+    pub enabled: bool,
     pub dac_enabled: bool,
-    pub trigger: bool,
     output_timer: u16,
     output_timer_period: u16,
     volume: u8,
 
     lfsr: u16,
-    pub width: bool,
-    pub divisor_shift: u8,
-    pub divisor: u8,
+    width: bool,
+    divisor_shift: u8,
+    divisor: u8,
 
-    pub length: u8,
-    pub length_counter: u8,
-    pub length_counter_enabled: bool,
-    
-    pub envelope_timer: u8,
-    pub envelope_direction: bool,
-    pub envelope_period: u8,
-    pub envelope_initial: u8,
+    length_counter: u8,
+    length_counter_enabled: bool,
+
+    envelope_timer: u8,
+    envelope_direction: bool,
+    envelope_period: u8,
+    envelope_initial: u8,
 
     output: f32,
     output_length: u32,
@@ -32,7 +30,6 @@ impl Channel4 {
         Self {
             enabled: false,
             dac_enabled: false,
-            trigger: false,
             output_timer: 0,
             output_timer_period: 0,
             volume: 0,
@@ -42,7 +39,6 @@ impl Channel4 {
             divisor: 0,
             divisor_shift: 0,
 
-            length: 0,
             length_counter: 0,
             length_counter_enabled: false,
 
@@ -122,11 +118,84 @@ impl Channel4 {
         }
     }
 
-    pub fn trigger_channel(&mut self) {
+    pub fn get_output(&mut self) -> f32 {
+        let r = self.output / (self.output_length as f32);
+        self.output = 0.0;
+        self.output_length = 0;
+
+        r
+    }
+
+    pub fn read_register(&self, addr: u16) -> u8 {
+        match addr {
+            // NR41 - Channel 4 Sound Length (R/W)
+            0xFF20 => 0xFF,
+
+            // NR42 - Channel 4 Volume Envelope (R/W)
+            0xFF21 => {
+                self.envelope_initial << 4 |
+                (self.envelope_direction as u8) << 3 |
+                self.envelope_period & 0x3 
+            }
+
+            // NR43 - Channel 4 Polynomial Counter (R/W)
+            0xFF22 => {
+                self.divisor_shift << 4 |
+                (self.width as u8) << 3 |
+                self.divisor & 0x3 
+            }
+
+            // NR44 - Channel 4 Counter/consecutive; Inital (R/W)
+            0xFF23 => 0xBF | ((self.length_counter_enabled as u8) << 6),
+
+            _ => panic!("Invalid APU CH4 read")
+        }
+    }
+
+    pub fn write_register(&mut self, addr: u16, data: u8) {
+        match addr {
+            // NR41 - Channel 4 Sound Length (R/W)
+            0xFF20 => {
+                self.length_counter = 64 - (data & 0x3F);
+            },
+
+            // NR42 - Channel 4 Volume Envelope (R/W)
+            0xFF21 => {
+                self.envelope_initial = data >> 4;
+                self.envelope_direction = data & 0x08 != 0;
+                self.envelope_period = data & 0x07;
+                self.dac_enabled = data & 0xF8 != 0;
+
+                self.envelope_timer = self.envelope_period;
+            },
+
+            // NR43 - Channel 4 Polynomial Counter (R/W)
+            0xFF22 => {
+                self.divisor_shift = (data & 0xF0) >> 4;
+                self.width = (data & 0x08) != 0;
+                self.divisor = data & 0x07;
+            },
+
+            // NR44 - Channel 4 Counter/consecutive; Inital (R/W)
+            0xFF23 => {
+                self.length_counter_enabled = (data & 0x40) != 0;
+                let trigger = (data & 0x80) != 0;
+                
+                if trigger {
+                    self.trigger_channel();
+                }
+            },
+
+            _ => panic!("Invalid APU CH4 write"),
+        }
+    }
+
+    fn trigger_channel(&mut self) {
         self.enabled = true;
-        // if self.length_counter == 0 {
-            self.length_counter = 64 - self.length;
-        // }
+
+        if self.length_counter == 0 {
+            self.length_counter = 64;
+        }
 
         self.envelope_timer = self.envelope_period;
         self.volume = self.envelope_initial;
@@ -135,13 +204,5 @@ impl Channel4 {
         
         self.output_timer_period = (DIVISORS[self.divisor as usize] as u16) << self.divisor_shift;
         self.output_timer = self.output_timer_period;
-    }
-
-    pub fn get_output(&mut self) -> f32 {
-        let r = self.output / (self.output_length as f32);
-        self.output = 0.0;
-        self.output_length = 0;
-
-        r
     }
 }

@@ -1,32 +1,31 @@
 
 pub struct Channel1 {
-    enabled: bool,
+    pub enabled: bool,
     pub dac_enabled: bool,
-    pub trigger: bool,
     output_timer: i16,
     output_timer_period: u16,
     volume: u8,
-    pub frequency: u16,
+    frequency: u16,
     
-    pub length_counter: u8,
-    pub length_counter_enabled: bool,
+    length_counter: u8,
+    length_counter_enabled: bool,
     
-    pub envelope_timer: u8,
-    pub envelope_direction: bool,
-    pub envelope_period: u8,
-    pub envelope_initial: u8,
+    envelope_timer: u8,
+    envelope_direction: bool,
+    envelope_period: u8,
+    envelope_initial: u8,
     
     sweep_enabled: bool,
-    pub sweep_period: u8,
-    pub sweep_shift: u8,
-    pub sweep_direction: bool,
-    pub sweep_timer: i16,
+    sweep_period: u8,
+    sweep_shift: u8,
+    sweep_direction: bool,
+    sweep_timer: i16,
     sweep_frequency_shadow: u16,
     
     waveforms: [[u8; 8]; 4],
     waveform_index: u8,
     
-    pub duty: u8,
+    duty: u8,
     output: u8
 }
 
@@ -35,7 +34,6 @@ impl Channel1 {
         Self {
             enabled: false,
             dac_enabled: false,
-            trigger: false,
             output: 0,
             output_timer: 0,
             volume: 0,
@@ -127,7 +125,6 @@ impl Channel1 {
 
         if frequency > 2047 {
             self.enabled = false;
-            // self.sweep_enabled = false;
         }
 
         frequency
@@ -160,8 +157,89 @@ impl Channel1 {
         }
     }
 
-    pub fn trigger_channel(&mut self) {
+    pub fn get_output(&self) -> u8 {
+        self.output
+    }
+
+    pub fn read_register(&self, addr: u16) -> u8 {
+        match addr {
+            // NR10 Channel 1 Sweep Register (R/W)
+            0xFF10 => {
+                0x80 |
+                ((self.sweep_period & 0x07) << 4) | 
+                (self.sweep_direction as u8) << 3 |
+                (self.sweep_shift & 0x07)
+            },
+
+            // NR11 - Channel 1 Sound length / Wave pattern duty (R/W)
+            0xFF11 => 0x3F | ((self.duty & 0x3) << 6),
+
+            // NR12 - Channel 1 Volume Envelope (R/W)
+            0xFF12 => {
+                (self.envelope_initial & 0x0F << 4) |
+                (self.envelope_direction as u8) << 3 |
+                (self.envelope_period & 0x7)
+            },
+
+            // NR13 - Channel 1 Frequency lo (W)
+            0xFF13 => 0xFF,
+
+            0xFF14 => {
+                0xBF | ((self.length_counter_enabled as u8) << 6)
+            },
+
+            _ => panic!("Invalid APU CH1 read")
+        }
+    }
+
+    pub fn write_register(&mut self, addr: u16, data: u8) {
+        match addr {
+            // NR10 Channel 1 Sweep Register (R/W)
+            0xFF10 => {
+                self.sweep_period = (data & 0x70) >> 4;
+                self.sweep_direction = (data & 0x08) != 0;
+                self.sweep_shift = data & 0x07;
+            }
+
+            // NR11 - Channel 1 Sound length / Wave pattern duty (R/W)
+            0xFF11 => {
+                self.length_counter = 64 - (data & 0x3F);
+                self.duty = data >> 6;
+            },
+
+            // NR12 - Channel 1 Volume Envelope (R/W)
+            0xFF12 => {
+                self.envelope_initial = data >> 4;
+                self.envelope_direction = data & 0x08 != 0;
+                self.envelope_period = data & 0x07;
+                self.dac_enabled = data & 0xF8 != 0;
+                
+                self.envelope_timer = self.envelope_period;
+            }
+
+            // NR13 - Channel 1 Frequency lo (W)
+            0xFF13 => {
+                self.frequency = (self.frequency & 0xFF00) | (data as u16);
+            },
+
+            // NR14 - Channel 1 Frequency hi (R/W)
+            0xFF14 => {
+                self.frequency = (((data as u16) & 0x07) << 8) | (self.frequency & 0x00FF);
+                self.length_counter_enabled = data & 0x40 != 0;
+                let trigger = (data & 0x80) != 0;
+
+                if trigger {
+                    self.trigger_channel();
+                }
+            },
+
+            _ => panic!("Invalid APU CH1 write"),
+        }
+    }
+
+    fn trigger_channel(&mut self) {
         self.enabled = true;
+
         if self.length_counter == 0 {
             self.length_counter = 64;
         }
@@ -178,9 +256,5 @@ impl Channel1 {
         if self.sweep_shift != 0 {
             self.frequency = self.sweep_calculate_frequency();
         }
-    }
-
-    pub fn get_output(&self) -> u8 {
-        self.output
     }
 }
