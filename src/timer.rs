@@ -1,8 +1,4 @@
-use core::cell::RefCell;
-
-use crate::iomapped::IOMapped;
-use crate::memorybus::MemoryBus;
-use crate::cpu::Interrupts;
+use crate::cpu::{Interrupts, CPUInterrupts};
 
 struct TimerRegisters {
     internal_counter: u16,
@@ -15,8 +11,8 @@ struct TimerRegisters {
 }
 
 pub struct Timer {
-    registers: RefCell<TimerRegisters>,
-    prev_and_result: RefCell<u8>
+    registers: TimerRegisters,
+    prev_and_result: u8
 }
 
 const TIMER_FREQ_BIT : [u8; 4] = [
@@ -29,7 +25,7 @@ const TIMER_FREQ_BIT : [u8; 4] = [
 impl Timer {
     pub fn new() -> Self {
         Self {
-            registers: RefCell::new(TimerRegisters {
+            registers: TimerRegisters {
                 timer_enabled: false,
                 timer_frequency: 0,
                 timer_counter: 0,
@@ -37,14 +33,14 @@ impl Timer {
                 timer_overflow: false,
                 timer_overflow_counter: 0,
                 internal_counter: 0x17CC, // why ?
-            }),
+            },
 
-            prev_and_result: RefCell::new(0),
+            prev_and_result: 0,
         }
     }
 
-    pub fn tick(&self, bus: &MemoryBus) {
-        let mut registers = self.registers.borrow_mut();
+    pub fn tick(&mut self, interrupts: &mut CPUInterrupts) {
+        let registers = &mut self.registers;
 
         registers.internal_counter = registers.internal_counter.wrapping_add(1);
 
@@ -56,8 +52,7 @@ impl Timer {
                 registers.timer_counter = registers.timer_modulo;
 
                 // raise the Timer interrupt
-                let iif = bus.read_byte(0xFF0F) | (1 << Interrupts::Timer as u8);
-                bus.write_byte(0xFF0F, iif);
+                interrupts.raise_interrupt(Interrupts::Timer);
 
                 registers.timer_overflow = false;
                 registers.timer_overflow_counter = 0;
@@ -68,8 +63,7 @@ impl Timer {
         let and_result = ((registers.internal_counter & (1 << bit)) >> bit) & (registers.timer_enabled as u16);
 
         // check for falling edge
-        let mut prev_result = self.prev_and_result.borrow_mut();
-        if and_result == 0 && *prev_result == 1 {
+        if and_result == 0 && self.prev_and_result == 1 {
             if registers.timer_counter == 0xFF {
                 registers.timer_overflow = true;
                 registers.timer_overflow_counter = 0;
@@ -77,13 +71,11 @@ impl Timer {
             registers.timer_counter = registers.timer_counter.wrapping_add(1);
         }
 
-        *prev_result = and_result as u8;
+        self.prev_and_result = and_result as u8;
     }
-}
 
-impl IOMapped for Timer {
-    fn read_byte(&self, address: u16) -> u8 {
-        let registers = self.registers.borrow();
+    pub fn read_byte(&self, address: u16) -> u8 {
+        let registers = &self.registers;
 
         match address {
             // FF04 DIV
@@ -102,8 +94,8 @@ impl IOMapped for Timer {
         }
     }
 
-    fn write_byte(&self, address: u16, data: u8) {
-        let mut registers = self.registers.borrow_mut();
+    pub fn write_byte(&mut self, address: u16, data: u8) {
+        let mut registers = &mut self.registers;
 
         match address {
             // FF04 DIV

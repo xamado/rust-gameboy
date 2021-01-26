@@ -7,7 +7,7 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'rust-gameboy'",
+            "name": "Debug",
             "cargo": {
                 "args": [
                     "build",
@@ -19,9 +19,34 @@
                     "kind": "bin"
                 }
             },
-            "args": [ "--rom", "roms/mooneye/manual-only/sprite_priority.gb", "--no-bootrom" ],
-            // "args": [ "--rom", "roms/Pokemon - Blue Version (UE) [S][!].gb", "--no-bootrom" ],
-            // "args": [ "--rom", "roms/mooneye/emulator-only/mbc1/bits_ramg.gb", "--no-bootrom" ],
+            // "args": [ "--rom", "roms/blarg/cpu_instrs.gb", "--no-bootrom", "--breakpoints", "0x0100" ],
+            "args": [ "--rom", "roms/Legend of Zelda, The - Link's Awakening (U) (V1.2) [!].gb" ],
+            // "args": [ "--rom", "roms/Super Mario Bros. Deluxe (U) (V1.1) [C][!].gbc", "--breakpoints", "0x0c2d" ],
+            // "args": [ "--rom", "roms/Legend of Zelda, The - Link's Awakening DX (USA, Europe) (SGB Enhanced).gbc" ],
+            // "args": [ "--rom", "roms/mooneye/acceptance/rst_timing.gb", "--no-bootrom", "--breakpoints", "", "--watchpoints", "" ],
+
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Release",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=rust-gameboy",
+                    "--package=rust-gameboy",
+                    "--release"
+                ],
+                "filter": {
+                    "name": "rust-gameboy",
+                    "kind": "bin"
+                }
+            },
+            "args": [ "--rom", "roms/mooneye/acceptance/ppu/intr_2_0_timing.gb" ],
+            // "args": [ "--rom", "roms/Legend of Zelda, The - Link's Awakening (U) (V1.2) [!].gb", "--no-bootrom" ],
+            // "args": [ "--rom", "roms/Super Mario Land (World).gb", "--no-bootrom" ],
+            // "args": [ "--rom", "roms/Legend of Zelda, The - Link's Awakening DX (F) [C][!].gbc", "--no-bootrom" ],
             // "args": [ "--rom", "roms/Mario's Picross (UE) [S][!].gb", "--no-bootrom", "--breakpoints", "", "--watchpoints", "" ],
 
             "cwd": "${workspaceFolder}"

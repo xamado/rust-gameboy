@@ -1,7 +1,5 @@
-use core::cell::RefCell;
 use crate::cpu::CPU;
 use crate::ppu::PPU;
-use crate::memorybus::MemoryBus;
 
 pub struct Breakpoint {
     address: u16
@@ -9,7 +7,7 @@ pub struct Breakpoint {
 
 pub struct Watchpoint {
     address: u16,
-    value: RefCell<u8>
+    value: u8
 }
 
 struct DebuggerState {
@@ -19,7 +17,7 @@ struct DebuggerState {
 pub struct Debugger {
     breakpoints: Vec<Breakpoint>,
     watchpoints: Vec<Watchpoint>,
-    state: RefCell<DebuggerState>,
+    state: DebuggerState,
 }
 
 impl Debugger {
@@ -27,23 +25,23 @@ impl Debugger {
         Self {
             breakpoints: vec!(),
             watchpoints: vec!(),
-            state: RefCell::new(DebuggerState {
+            state: DebuggerState {
                 stopped: false
-            }),
+            },
         }
     }
 
     pub fn is_stopped(&self) -> bool {
-        self.state.borrow().stopped
+        self.state.stopped
     }
 
-    pub fn resume(&self) {
-        self.state.borrow_mut().stopped = false;
+    pub fn resume(&mut self) {
+        self.state.stopped = false;
     }
 
-    pub fn stop(&self, cpu: &CPU, ppu: &PPU) {
+    pub fn stop(&mut self, cpu: &CPU, ppu: &PPU) {
         self.print_trace(cpu, ppu);
-        self.state.borrow_mut().stopped = true;
+        self.state.stopped = true;
     }
 
     pub fn add_breakpoint(&mut self, addr: u16) {
@@ -55,29 +53,29 @@ impl Debugger {
     pub fn add_watchpoint(&mut self, addr: u16) {
         self.watchpoints.push(Watchpoint {
             address: addr,
-            value: RefCell::new(0)
+            value: 0
         });
     }
 
-    pub fn process(&self, cpu: &CPU, ppu: &PPU, bus: &MemoryBus) {
+    pub fn process(&mut self, cpu: &CPU, ppu: &PPU) {
         let cpu_state = cpu.get_debug_state();
 
         for b in &self.breakpoints {
             if b.address == cpu_state.pc {
                 self.print_trace(&cpu, ppu);
-                self.state.borrow_mut().stopped = true;
+                self.state.stopped = true;
                 break;
             }
         }
 
-        for w in &self.watchpoints {
-            let v = bus.read_byte(w.address);
-            if v != *w.value.borrow() {
-                *w.value.borrow_mut() = v;
+        // for w in &mut self.watchpoints {
+        //     let v = bus.read_byte(w.address);
+        //     if v != w.value {
+        //         w.value = v;
 
-                println!("@{:06X} Watch: {:#06X} = {:#04X}", cpu_state.pc, w.address, v);
-            }
-        }
+        //         println!("@{:06X} Watch: {:#06X} = {:#04X}", cpu_state.pc, w.address, v);
+        //     }
+        // }
     }
 
     pub fn print_trace(&self, cpu: &CPU, ppu: &PPU) {

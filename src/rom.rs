@@ -1,4 +1,3 @@
-use crate::iomapped::IOMapped;
 use std::str;
 use std::path::PathBuf;
 use std::fs::File;
@@ -100,10 +99,8 @@ impl ROM {
             }
         }
     }
-}
 
-impl IOMapped for ROM {
-    fn read_byte(&self, address: u16) -> u8 {
+    pub fn read_byte(&self, address: u16) -> u8 {
         if let Some(mbc) = &self.mbc {
             mbc.read_byte(address)
         }
@@ -112,8 +109,8 @@ impl IOMapped for ROM {
         }
     }
 
-    fn write_byte(&self, address: u16, data: u8) {
-        if let Some(mbc) = &self.mbc {
+    pub fn write_byte(&mut self, address: u16, data: u8) {
+        if let Some(mbc) = &mut self.mbc {
             mbc.write_byte(address, data);
         }
     }

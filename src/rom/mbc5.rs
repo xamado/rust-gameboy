@@ -1,4 +1,3 @@
-use core::cell::RefCell;
 use crate::rom::MBC;
 
 struct MBC5Registers {
@@ -8,9 +7,9 @@ struct MBC5Registers {
 }
 
 pub struct MBC5 {
-    data: RefCell<Vec<u8>>,
-    ram: RefCell<Vec<u8>>,
-    registers: RefCell<MBC5Registers>,
+    data: Vec<u8>,
+    ram: Vec<u8>,
+    registers: MBC5Registers,
     num_rom_banks: u16,
     num_ram_banks: u16
 }
@@ -31,13 +30,13 @@ impl MBC5 {
         };
         
         Self {
-            data: RefCell::new(data.to_vec()),
-            ram: RefCell::new(vec!(0; vec_ram_size)), 
-            registers: RefCell::new(MBC5Registers {
+            data: data.to_vec(),
+            ram: vec!(0; vec_ram_size),
+            registers: MBC5Registers {
                 ram_enabled: false,
                 rom_bank: 1,
                 ram_bank: 0,
-            }),            
+            },
             num_rom_banks,
             num_ram_banks,
         }
@@ -46,27 +45,22 @@ impl MBC5 {
 
 impl MBC for MBC5 {
     fn read_byte(&self, address: u16) -> u8 {
-        let registers = self.registers.borrow();
-
         match address {
             0x0000..=0x3FFF => {
-                let rom = self.data.borrow();
-                rom[address as usize]
+                self.data[address as usize]
             },
 
             0x4000..=0x7FFF => {
-                let rom = self.data.borrow();
-                let bank: u32 = (registers.rom_bank as u32) % (self.num_rom_banks as u32);
+                let bank: u32 = (self.registers.rom_bank as u32) % (self.num_rom_banks as u32);
                 let idx: u32 = (bank * 0x4000) + ((address - 0x4000) as u32);
-                rom[idx as usize]
+                self.data[idx as usize]
             },
 
             0xA000..=0xBFFF => {
-                if registers.ram_enabled {
-                    let ram = self.ram.borrow();
-                    let ram_bank: u32 = if self.num_ram_banks <= 1 { 0 } else { registers.ram_bank as u32 };
+                if self.registers.ram_enabled {
+                    let ram_bank: u32 = if self.num_ram_banks <= 1 { 0 } else { self.registers.ram_bank as u32 };
                     let ram_addr: u32 = (ram_bank * 0x2000) + ((address - 0xA000) as u32);
-                    ram[ram_addr as usize]
+                    self.ram[ram_addr as usize]
                 }
                 else {
                     0xff
@@ -78,33 +72,30 @@ impl MBC for MBC5 {
         
     }
 
-    fn write_byte(&self, address: u16, data: u8) {
-        let mut registers = self.registers.borrow_mut();
-
+    fn write_byte(&mut self, address: u16, data: u8) {
         match address {
             0x0000..=0x1FFF => {
-                registers.ram_enabled = data == 0x0A;
+                self.registers.ram_enabled = data == 0x0A;
             },
 
             0x2000..=0x2FFF => {
-                registers.rom_bank = (registers.rom_bank & 0xFF00) | (data as u16);
+                self.registers.rom_bank = (self.registers.rom_bank & 0xFF00) | (data as u16);
             },
             
             0x3000..=0x3FFF => {
-                registers.rom_bank = (((data & 0x1) as u16) << 8) | (registers.rom_bank & 0x00FF);
+                self.registers.rom_bank = (((data & 0x1) as u16) << 8) | (self.registers.rom_bank & 0x00FF);
             },
 
             // RAM bank number / RTC register select
             0x4000..=0x5FFF => { 
-                registers.ram_bank = data & 0x3;
+                self.registers.ram_bank = data & 0x3;
             },
             
             0xA000..=0xBFFF => {
-                if registers.ram_enabled {
-                    let mut ram = self.ram.borrow_mut();
-                    let ram_bank: u32 = if self.num_ram_banks <= 1 { 0 } else { (registers.ram_bank & 0x3) as u32 };
+                if self.registers.ram_enabled {
+                    let ram_bank: u32 = if self.num_ram_banks <= 1 { 0 } else { (self.registers.ram_bank & 0x3) as u32 };
                     let ram_addr: u32 = (ram_bank * 0x2000) + ((address - 0xA000) as u32);
-                    ram[ram_addr as usize] = data;
+                    self.ram[ram_addr as usize] = data;
                 }
             },
 
@@ -113,12 +104,10 @@ impl MBC for MBC5 {
     }
 
     fn get_ram_contents(&self) -> Option<Vec<u8>> {
-        let ram = self.ram.borrow();
-        Some(ram.to_owned())
+        Some(self.ram.to_owned())
     }
 
-    fn set_ram_contents(&self, data: &[u8]) {
-        let mut ram = self.ram.borrow_mut();
-        ram.copy_from_slice(data);
+    fn set_ram_contents(&mut self, data: &[u8]) {
+        self.ram.copy_from_slice(data);
     }
 }

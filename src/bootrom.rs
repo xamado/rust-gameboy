@@ -1,4 +1,3 @@
-use crate::iomapped::IOMapped;
 use std::str;
 
 pub struct BootROM {
@@ -22,14 +21,8 @@ impl BootROM {
     pub fn len(&self) -> usize {
         self.data.len()
     }
-}
 
-impl IOMapped for BootROM {
-    fn read_byte(&self, address: u16) -> u8 {
+    pub fn read_byte(&self, address: u16) -> u8 {
         self.data[address as usize]       
-    }
-
-    fn write_byte(&self, address: u16, _data: u8) {
-        panic!("Invalid BOOTROM write {:#06x}", address);
     }
 }
