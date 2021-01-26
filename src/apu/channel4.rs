@@ -5,7 +5,7 @@ pub struct Channel4 {
     enabled: bool,
     pub dac_enabled: bool,
     pub trigger: bool,
-    output_timer: i16,
+    output_timer: u16,
     output_timer_period: u16,
     volume: u8,
 
@@ -22,8 +22,9 @@ pub struct Channel4 {
     pub envelope_direction: bool,
     pub envelope_period: u8,
     pub envelope_initial: u8,
-    
-    accumulator_ch4: Vec<u8>,
+
+    output: f32,
+    output_length: u32,
 }
 
 impl Channel4 {
@@ -50,16 +51,19 @@ impl Channel4 {
             envelope_period: 0,
             envelope_direction: false,
 
-            accumulator_ch4: vec!(),
+            output: 0.0,
+            output_length: 0,
         }
     }
 
     pub fn tick(&mut self) {
-        self.output_timer -= 1;
-        if self.output_timer <= 0 {
-            self.output_timer_period = (DIVISORS[self.divisor as usize] as u16) << self.divisor_shift;
+        if self.output_timer > 0 {
+            self.output_timer -= 1;
+        }
 
-            self.output_timer = self.output_timer_period as i16;
+        if self.output_timer == 0 {
+            self.output_timer_period = (DIVISORS[self.divisor as usize] as u16) << self.divisor_shift;
+            self.output_timer = self.output_timer_period;
 
             if self.divisor_shift != 14 && self.divisor_shift != 15 {
                 let b = self.lfsr & 0x1 ^ ((self.lfsr >> 1) & 0x1);
@@ -83,7 +87,8 @@ impl Channel4 {
             0
         };
 
-        self.accumulator_ch4.push(output);
+        self.output += output as f32;
+        self.output_length += 1;
     }
 
     pub fn tick_length_counter(&mut self) {
@@ -129,13 +134,14 @@ impl Channel4 {
         self.lfsr = 0x7FFF;
         
         self.output_timer_period = (DIVISORS[self.divisor as usize] as u16) << self.divisor_shift;
-        self.output_timer = self.output_timer_period as i16;
+        self.output_timer = self.output_timer_period;
     }
 
     pub fn get_output(&mut self) -> f32 {
-        let output = self.accumulator_ch4.iter().fold(0.0, |acc, v| acc + (*v as f32)) / (self.accumulator_ch4.len() as f32);
-        self.accumulator_ch4.clear();
+        let r = self.output / (self.output_length as f32);
+        self.output = 0.0;
+        self.output_length = 0;
 
-        output
+        r
     }
 }

@@ -51,7 +51,7 @@ impl APU {
 
     pub fn consume_audio_samples(&mut self) -> Vec<i16> {
         let r = self.samples.to_owned();
-        self.samples = vec!();
+        self.samples.clear();
         
         r
     }
